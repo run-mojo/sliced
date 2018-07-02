@@ -1,0 +1,16 @@
+[package]
+name = "sliced"
+version = "0.2.2"
+authors = ["Brandur <brandur@mutelight.org>"]
+build = "build.rs"
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+bitflags = "1.0"
+libc = "0.2.42"
+time = "0.1.40"
+
+[build-dependencies]
+gcc = "0.3"
