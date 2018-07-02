@@ -22,8 +22,10 @@ matrix:
     # Stable.
     - env: TARGET=x86_64-unknown-linux-gnu
     - env: TARGET=x86_64-apple-darwin
+    - rust: nightly
       os: osx
     - env: TARGET=x86_64-unknown-freebsd DISABLE_TESTS=1
+    - rust: nightly
 
     # Testing other channels
     - env:
@@ -43,8 +45,12 @@ install:
   - source ~/.cargo/env || true
 
 before_script:
-  - if [[ $NIGHTLY == 'true' ]]; then rustup component add rustfmt-preview; fi
-  - if [[ $NIGHTLY == 'true' ]]; then cargo +nightly install clippy --force; fi
+  - rustup component add rustfmt-preview;
+  - cargo +nightly install clippy --force;
+
+#before_script:
+#  - if [[ $NIGHTLY == 'true' ]]; then rustup component add rustfmt-preview; fi
+#  - if [[ $NIGHTLY == 'true' ]]; then cargo +nightly install clippy --force; fi
 
 script:
   - bash ci/script.sh
@@ -73,20 +79,20 @@ branches:
     # like v1.2.3-rc4+2016.02.22
     - /^v\d+\.\d+\.\d+.*$/
 
-deploy:
-  provider: releases
-  # Generated with `travis encrypt $token`. Token is scoped to `public_repo`.
-  api_key:
-    secure: "sK0Hy8dF1wmz+A505coJNeR8BYooD9AranRdvJagbvJcsijc1Bs7id8f0VruezSRvs2CZXt/iC9Btu/6/R+pvc7vskZyqsdXBpO1oFMUMwwzPuasz2w5DOFH8Ftg2fOl8Hjm3vzwp/itkjeUl/3beX/MTHt1emIusnFP6HcpSIx3XUvjU5c+VoAuGIj5qEu2eKGyRQf+pFiHqeR5H75cVJoFps0E8eaQbCV1XolX/sVHenaxYIaTb87xMUCV6k2VHWhAR5036+OJ02W1q9mAgChD83Ac/+j2Oq52hg2yyjYsLit0of7BJ1Rg0025yZd8dap4g9cW59/MO6jnUzOiX1uHvWXgOaAiktzrgHcw0zwZS6DyYzRkJ2AVAaYXrs/LdVQOECMAc1Flur0aS/OwaojMRK6MDLqLJ1nMjacSQl2loAu1XFhVum0RZQ37jXrdJxZK9+xj712WkbSmGoQvh1oJB631H4nPNOJxBOdvV3EL3sJ/XGVpXEWlQk28V6QPpxSCmNNDVNj3s1LuonkB+L6ZxreKixP2tWMO76a63k4zBBVaCDdkmIDCaXActDM/V3+nQbJgQBApu/v0+d0dd91P0uapWYkUOJMRVoGUVQ1xRPdCh/yaVRd6DPN4HW7TCaEUyamlcFo9mZsTiC6pTPNMv3IjpEgJfzf/3qkjryQ="
-  file_glob: true
-  file: $CRATE_NAME-$TRAVIS_TAG-$TARGET.*
-  # Don't delete the artifacts from previous phases.
-  skip_cleanup: true
-  # Deploy when a new tag is pushed.
-  on:
-    # Channel to use to produce the release artifacts. NOTE make sure you only
-    # release *once* per target.
-    condition: $TRAVIS_RUST_VERSION = stable
-    tags: true
-  provider: releases
-  skip_cleanup: true
+#deploy:
+#  provider: releases
+#  # Generated with `travis encrypt $token`. Token is scoped to `public_repo`.
+#  api_key:
+#    secure: "sK0Hy8dF1wmz+A505coJNeR8BYooD9AranRdvJagbvJcsijc1Bs7id8f0VruezSRvs2CZXt/iC9Btu/6/R+pvc7vskZyqsdXBpO1oFMUMwwzPuasz2w5DOFH8Ftg2fOl8Hjm3vzwp/itkjeUl/3beX/MTHt1emIusnFP6HcpSIx3XUvjU5c+VoAuGIj5qEu2eKGyRQf+pFiHqeR5H75cVJoFps0E8eaQbCV1XolX/sVHenaxYIaTb87xMUCV6k2VHWhAR5036+OJ02W1q9mAgChD83Ac/+j2Oq52hg2yyjYsLit0of7BJ1Rg0025yZd8dap4g9cW59/MO6jnUzOiX1uHvWXgOaAiktzrgHcw0zwZS6DyYzRkJ2AVAaYXrs/LdVQOECMAc1Flur0aS/OwaojMRK6MDLqLJ1nMjacSQl2loAu1XFhVum0RZQ37jXrdJxZK9+xj712WkbSmGoQvh1oJB631H4nPNOJxBOdvV3EL3sJ/XGVpXEWlQk28V6QPpxSCmNNDVNj3s1LuonkB+L6ZxreKixP2tWMO76a63k4zBBVaCDdkmIDCaXActDM/V3+nQbJgQBApu/v0+d0dd91P0uapWYkUOJMRVoGUVQ1xRPdCh/yaVRd6DPN4HW7TCaEUyamlcFo9mZsTiC6pTPNMv3IjpEgJfzf/3qkjryQ="
+#  file_glob: true
+#  file: $CRATE_NAME-$TRAVIS_TAG-$TARGET.*
+#  # Don't delete the artifacts from previous phases.
+#  skip_cleanup: true
+#  # Deploy when a new tag is pushed.
+#  on:
+#    # Channel to use to produce the release artifacts. NOTE make sure you only
+#    # release *once* per target.
+#    condition: $TRAVIS_RUST_VERSION = stable
+#    tags: true
+#  provider: releases
+#  skip_cleanup: true
