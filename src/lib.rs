@@ -38,8 +38,8 @@ unsafe impl GlobalAlloc for RedisAllocator {
 }
 
 /// Wire up Rust's global allocator
-//#[global_allocator]
-//static GLOBAL: RedisAllocator = RedisAllocator;
+#[global_allocator]
+static GLOBAL: RedisAllocator = RedisAllocator;
 
 /// Module name and version
 const MODULE_NAME: &'static str = "slice/d";
