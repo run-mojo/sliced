@@ -1,27 +1,17 @@
 #include "redismodule.h"
+#include <stdlib.h>
 
-/**
- * Directly link with Redis' version of "malloc"
- *
- * @param size
- * @return
- */
-void *zmalloc(size_t size);
+// void *SD_Alloc(size_t size) {
+//     return zmalloc(size);
+// }
 
-/**
- * Directly link with Redis' version of "zrealloc"
- *
- * @param ptr
- * @param size
- * @return
- */
-void *zrealloc(void *ptr, size_t size);
+// void *SD_Realloc(void *ptr, size_t size) {
+//     return zrealloc(ptr, size);
+// }
 
-/**
- * Directly link with Redis' version of "free"
- * @param ptr
- */
-void zfree(void *ptr);
+// void SD_Free(void *ptr) {
+//     zfree(ptr);
+// }
 
 // RedisModule_Init is defined as a static function and so won't be exported as
 // a symbol. Export a version under a slightly different name so that we can

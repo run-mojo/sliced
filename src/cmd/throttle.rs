@@ -4,7 +4,7 @@ extern crate time;
 use error::{CellError};
 
 use redis::{Command, Redis};
-use redis::raw;
+use redis::api;
 
 use cell;
 use cell::store;
@@ -12,12 +12,12 @@ use cell::store;
 use cmd;
 
 pub fn load(
-    ctx: *mut raw::RedisModuleCtx,
-    _argv: *mut *mut raw::RedisModuleString,
+    ctx: *mut api::RedisModuleCtx,
+    _argv: *mut *mut api::RedisModuleString,
     _argc: libc::c_int,
-) -> raw::Status {
+) -> api::Status {
     let command = ThrottleCommand {};
-    if raw::create_command(
+    if api::create_command(
         ctx,
         format!("{}\0", command.name()).as_ptr(),
         Some(Throttle_RedisCommand),
@@ -25,20 +25,20 @@ pub fn load(
         0,
         0,
         0,
-    ) == raw::Status::Err {
-        return raw::Status::Err;
+    ) == api::Status::Err {
+        return api::Status::Err;
     }
-    return raw::Status::Ok
+    return api::Status::Ok
 }
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn Throttle_RedisCommand(
-    ctx: *mut raw::RedisModuleCtx,
-    argv: *mut *mut raw::RedisModuleString,
+    ctx: *mut api::RedisModuleCtx,
+    argv: *mut *mut api::RedisModuleString,
     argc: libc::c_int,
-) -> raw::Status {
+) -> api::Status {
     Command::harness(&ThrottleCommand {}, ctx, argv, argc)
 }
 
@@ -64,7 +64,7 @@ impl Command for ThrottleCommand {
 
         // the first argument is command name "cl.throttle" (ignore it)
         let key = args[1];
-        let max_burst = ::parse_i64(args[2])?;
+        let max_burst = cmd::parse_i64(args[2])?;
         let count = cmd::parse_i64(args[3])?;
         let period = cmd::parse_i64(args[4])?;
         let quantity = match args.get(5) {

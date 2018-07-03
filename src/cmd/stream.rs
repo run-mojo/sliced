@@ -1,18 +1,19 @@
 extern crate libc;
 extern crate time;
 
-use error::{CellError};
+use error::CellError;
 
+use redis::api;
 use redis::{Command, Redis};
-use redis::raw;
 
+///
 pub fn load(
-    ctx: *mut raw::RedisModuleCtx,
-    _argv: *mut *mut raw::RedisModuleString,
+    ctx: *mut api::RedisModuleCtx,
+    _argv: *mut *mut api::RedisModuleString,
     _argc: libc::c_int,
-) -> raw::Status {
-    let command = StreamAddCommand {};
-    if raw::create_command(
+) -> api::Status {
+    let command = AddCommand {};
+    if api::create_command(
         ctx,
         format!("{}\0", command.name()).as_ptr(),
         Some(StreamAdd_RedisCommand),
@@ -20,26 +21,26 @@ pub fn load(
         0,
         0,
         0,
-    ) == raw::Status::Err {
-        return raw::Status::Err;
+    ) == api::Status::Err {
+        return api::Status::Err;
     }
-    return raw::Status::Ok;
+    return api::Status::Ok;
 }
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn StreamAdd_RedisCommand(
-    ctx: *mut raw::RedisModuleCtx,
-    argv: *mut *mut raw::RedisModuleString,
+    ctx: *mut api::RedisModuleCtx,
+    argv: *mut *mut api::RedisModuleString,
     argc: libc::c_int,
-) -> raw::Status {
-    Command::harness(&StreamAddCommand {}, ctx, argv, argc)
+) -> api::Status {
+    Command::harness(&AddCommand {}, ctx, argv, argc)
 }
 
-struct StreamAddCommand {}
+struct AddCommand {}
 
-impl Command for StreamAddCommand {
+impl Command for AddCommand {
     // Should return the name of the command to be registered.
     fn name(&self) -> &'static str {
         "mo.add"
@@ -54,7 +55,7 @@ impl Command for StreamAddCommand {
         r.reply_integer(2)?;
         r.reply_integer(5)?;
         r.reply_integer(10)?;
-//        r.reply_integer(raw::milliseconds());
+        //        r.reply_integer(raw::milliseconds());
 
         Ok(())
     }

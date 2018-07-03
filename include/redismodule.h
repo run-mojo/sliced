@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+void *zmalloc(size_t size);
+void *zrealloc(void *ptr, size_t size);
+void zfree(void *ptr);
+
 /* ---------------- Defines common between core and modules --------------- */
 
 /* Error status return values. */
@@ -170,10 +174,17 @@ typedef struct RedisModuleTypeMethods {
 
 #define REDISMODULE_API_FUNC(x) (*x)
 
+void *zmalloc(size_t size);
+void *zcalloc(size_t size);
+void *zrealloc(void *ptr, size_t size);
+void zfree(void *ptr);
 
+//void *REDISMODULE_API_FUNC(zmalloc)(size_t bytes);
 void *REDISMODULE_API_FUNC(RedisModule_Alloc)(size_t bytes);
 void *REDISMODULE_API_FUNC(RedisModule_Realloc)(void *ptr, size_t bytes);
+//void *REDISMODULE_API_FUNC(zrealloc)(void *ptr, size_t bytes);
 void REDISMODULE_API_FUNC(RedisModule_Free)(void *ptr);
+//void REDISMODULE_API_FUNC(zfree)(void *ptr);
 void *REDISMODULE_API_FUNC(RedisModule_Calloc)(size_t nmemb, size_t size);
 char *REDISMODULE_API_FUNC(RedisModule_Strdup)(const char *str);
 int REDISMODULE_API_FUNC(RedisModule_GetApi)(const char *, void *);
