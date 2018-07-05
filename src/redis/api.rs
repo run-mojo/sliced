@@ -366,8 +366,8 @@ pub fn init(
 /// Return non-zero if a module command, that was declared with the
 /// flag "getkeys-api", is called in a special way to get the keys positions
 /// and not to get executed. Otherwise zero is returned.
-pub fn is_key_position_request(ctx: *mut RedisModuleCtx) -> bool {
-    unsafe { RedisModule_IsKeyPositionRequest(ctx) != 0 }
+pub fn is_keys_position_request(ctx: *mut RedisModuleCtx) -> bool {
+    unsafe { RedisModule_IsKeysPositionRequest(ctx) != 0 }
 }
 
 /// When a module command is called in order to obtain the position of
@@ -1471,7 +1471,7 @@ extern "C" {
         free: Option<RedisModuleTypeFreeFunc>,
     ) -> *mut RedisModuleType;
 
-    static RedisModule_IsKeyPositionRequest:
+    static RedisModule_IsKeysPositionRequest:
     extern "C" fn(ctx: *mut RedisModuleCtx) -> libc::c_int;
 
     static RedisModule_KeyAtPos:

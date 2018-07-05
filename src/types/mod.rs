@@ -2,6 +2,10 @@ extern crate libc;
 
 //pub mod types;
 
+pub struct DataTypes {
+    histogram: HistogramType
+}
+
 use redis::api;
 
 pub fn create_redis_types(ctx: *mut api::RedisModuleCtx) -> api::Status {

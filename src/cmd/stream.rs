@@ -2,9 +2,8 @@ extern crate libc;
 extern crate time;
 
 use error::CellError;
-
-use redis::api;
 use redis::{Command, Redis};
+use redis::api;
 
 ///
 pub fn load(
@@ -40,6 +39,12 @@ pub extern "C" fn StreamAdd_RedisCommand(
 
 struct AddCommand {}
 
+impl AddCommand {
+    extern "C" fn timer_callback(_value: *mut libc::c_void) {
+//        log_debug!(self, "timer_callback() called");
+    }
+}
+
 impl Command for AddCommand {
     // Should return the name of the command to be registered.
     fn name(&self) -> &'static str {
@@ -49,13 +54,17 @@ impl Command for AddCommand {
     fn run(&self, r: Redis, _: &[&str]) -> Result<(), CellError> {
         let _time_reply = r.call("GET", &["hi"]).unwrap();
 
+        let _timer_id = r.create_timer(
+            1000,
+            Some(AddCommand::timer_callback),
+        );
+
         // Get throttle key
         r.reply_array(4)?;
         r.reply_integer(1)?;
         r.reply_integer(2)?;
         r.reply_integer(5)?;
         r.reply_integer(10)?;
-        //        r.reply_integer(raw::milliseconds());
 
         Ok(())
     }
