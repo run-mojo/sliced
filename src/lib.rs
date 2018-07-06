@@ -1,26 +1,27 @@
 #![allow(non_upper_case_globals)]
 #[macro_use]
 extern crate bitflags;
-#[allow(non_snake_case)]
-#[macro_use]
-extern crate const_cstr;
+//#[macro_use]
+//extern crate const_cstr;
 extern crate dlopen;
 #[macro_use]
 extern crate dlopen_derive;
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;
-extern crate libloading as lib;
 extern crate time;
 
-use dlopen::raw::Library;
+//extern crate libloading as lib;
+//#[macro_use]
+//extern crate cpp;
+
+//use dlopen::raw::Library;
 use dlopen::wrapper::{Container, WrapperApi};
-use lib::os::unix;
-use libc::{c_char, c_int};
+//use libc::{c_int};
 // Imports
+//use std::alloc::{GlobalAlloc, Layout};
+//use std::ffi::CStr;
 use redis::api;
-use std::alloc::{GlobalAlloc, Layout};
-use std::ffi::CStr;
 
 #[macro_use]
 mod macros;
@@ -37,32 +38,34 @@ pub mod types;
 const MODULE_NAME: &'static str = "slice/d";
 const MODULE_VERSION: libc::c_int = 1;
 
-
 //#[link(name = "jemalloc", kind = "static")]
 
-
-
-//lazy_static! {
-//    static ref REDIS_API: Container<RedisApi> = {
-//        (match std::env::var("REDIS_PATH") {
-//            Ok(path) => {
-//            println!("{}", path);
-//                Some(unsafe { Container::load(path) }.expect("Could not open library"))
-//            },
-//            Err(_) => {
-//                match std::env::current_exe() {
-//                    Ok(exe_path) => {
-//                    println!("{}", exe_path.to_str().unwrap());;
-//                        Some(unsafe { Container::load(exe_path.to_str().unwrap()) }.expect("Could not open library"))
-//                    },
-//                    Err(e) => None
-//                }
-//            }
-//        }).unwrap()
-//    };
+//extern "C" {
+//    fn zmalloc()
 //}
 
-//static mut RED_SYM: *const RedisApi = std::ptr::null();
+
+lazy_static! {
+    static ref REDIS_API: Container<RedisApi> = {
+        (match std::env::var("REDIS_PATH") {
+            Ok(path) => {
+            println!("{}", path);
+                Some(unsafe { Container::load(path) }.expect("Could not open library"))
+            },
+            Err(_) => {
+                match std::env::current_exe() {
+                    Ok(exe_path) => {
+                    println!("{}", exe_path.to_str().unwrap());;
+                        Some(unsafe { Container::load(exe_path.to_str().unwrap()) }.expect("Could not open library"))
+                    },
+                    Err(e) => None
+                }
+            }
+        }).unwrap()
+    };
+}
+
+static mut RED_SYM: *const RedisApi = std::ptr::null();
 static mut REDIS: *const redis::Redis = std::ptr::null();
 
 
@@ -94,6 +97,23 @@ static mut REDIS: *const redis::Redis = std::ptr::null();
 //    }
 //}
 
+//static mut GLOBAL: Option<Global> = None;
+
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn sliced_on_keyspace_event(
+    ctx: *mut api::RedisModuleCtx,
+    rtype: libc::c_int,
+    event: *mut u8,
+    key: *mut api::RedisModuleString,
+) -> libc::c_int {
+    println!("keyspace_event");
+    return 1;
+}
+
+const CLO: fn() = || {};
+
+/// Redis Module entry point
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 #[no_mangle]
@@ -102,19 +122,6 @@ pub extern "C" fn RedisModule_OnLoad(
     argv: *mut *mut api::RedisModuleString,
     argc: libc::c_int,
 ) -> api::Status {
-    unsafe {
-        // Load redis-server symbols
-//        RED_SYM = &REDIS_API.clone();
-        REDIS = &redis::Redis { ctx };
-    }
-
-
-    let listpack = redis::listpack::ListPack::new();
-    let len = listpack.length();
-
-    let listpack2 = redis::listpack::ListPack::new();
-    let len2 = listpack2.length();
-
     if api::init(
         ctx,
         format!("{}\0", MODULE_NAME).as_ptr(),
@@ -123,6 +130,35 @@ pub extern "C" fn RedisModule_OnLoad(
     ) == api::Status::Err {
         return api::Status::Err;
     }
+
+    let GLOBAL = Global {
+        redis: redis::Redis { ctx },
+        ctx,
+    };
+
+    unsafe {
+        // Load redis-server symbols
+        RED_SYM = &REDIS_API.clone();
+        REDIS = &redis::Redis { ctx };
+    }
+
+    let redis = redis::Redis { ctx };
+
+    let timer_id = redis.run(move || {
+        println!("timer tick");
+    });
+
+
+    if api::subscribe_to_keyspace_events(
+        ctx,
+        api::NotifyFlags::ALL,
+        Some(sliced_on_keyspace_event)) == api::Status::Err {
+        return api::Status::Err;
+    }
+
+    let listpack = redis::listpack::ListPack::new();
+    let len = listpack.length();
+
 
     // Create native Redis types
     if types::create_redis_types(ctx) == api::Status::Err {
@@ -141,21 +177,41 @@ pub extern "C" fn RedisModule_OnLoad(
     api::Status::Ok
 }
 
+//const GLOBAL: Global<'static> = Global {
+//    redis: &mut redis::Redis { ctx: std::ptr::null_mut() },
+//    ctx: std::ptr::null_mut(),
+////    timers: (),
+//};
 
 //#[derive(Clone)]
-//pub struct Global {
-//    pub redis: *const RedisApi,
-//    pub ctx: *mut api::RedisModuleCtx,
-//
-//    // data_types
-//    // commands
-//}
+pub struct Global {
+    pub redis: redis::Redis,
+    pub ctx: *mut api::RedisModuleCtx,
+//    pub timers: std::collections::HashMap<redis::TimerID, redis::TimerHandle<'a>>,
 
-//#[derive(WrapperApi, Clone, Copy, Debug)]
-//#[allow(non_snake_case)]
-//#[allow(unused_variables)]
-//#[no_mangle]
-//pub struct RedisApi {}
+    // data_types
+    // commands
+}
+
+
+impl Global {
+//    pub fn create_timer(&self, millis: i64, callback: fn() -> i32) {
+//        let cb = Box::new(Box::new(callback));
+//
+//        api::create_timer(self.ctx, millis, Some(sliced_timer_callback), unsafe { Box::into_raw(cb) as *mut libc::c_void });
+//    }
+}
+
+
+#[derive(WrapperApi, Clone, Copy, Debug)]
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+#[no_mangle]
+pub struct RedisApi {
+    RM_SubscribeToKeyspaceEvents: extern "C" fn(ctx: *mut api::RedisModuleCtx,
+                                                types: libc::c_int,
+                                                callback: Option<api::RedisModuleNotificationFunc>) -> libc::c_int,
+}
 
 
 // extern "C" {

@@ -81,3 +81,7 @@ RedisModuleType *Export_RedisModule_CreateDataType(RedisModuleCtx *ctx,
 
     return RedisModule_CreateDataType(ctx, name, encver, &tm);
 }
+
+int Export_RedisModule_SubscribeToKeyspaceEvents(RedisModuleCtx *ctx, int types, RedisModuleNotificationFunc cb) {
+    return RedisModule_SubscribeToKeyspaceEvents(ctx, types, cb);
+}

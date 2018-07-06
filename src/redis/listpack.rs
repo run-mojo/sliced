@@ -1,16 +1,8 @@
 #![allow(dead_code)]
 
-use dlopen::wrapper::{Container, WrapperApi};
 use libc;
 
-//static API: ::RedisApi = ::REDIS_EXE;
-
-//static API: Container<::RedisApi> = ::REDIS_API.lpLength;
 const LP_INTBUF_SIZE: libc::c_int = 21;
-
-const LP_BEFORE: libc::c_int = 0;
-const LP_AFTER: libc::c_int = 1;
-const LP_REPLACE: libc::c_int = 2;
 
 pub enum Where {
     Before = 0,
@@ -69,6 +61,15 @@ impl ListPack {
                 w as libc::c_int,
                 newp,
             )
+        };
+    }
+
+    pub fn append_str(&mut self,
+                      ele: &str) {
+        self.lp = unsafe {
+            lpAppend(self.lp,
+                     ele.as_ptr(),
+                     ele.len() as libc::uint32_t)
         };
     }
 
@@ -148,19 +149,15 @@ extern "C" {
 
 #[cfg(test)]
 mod tests {
-    extern crate libc;
-
-    use libc::{c_char, c_int};
-    use redis::listpack;
     use redis::listpack::ListPack;
-    use std::env;
-    use std::ffi::CStr;
 
 
     #[test]
     fn it_works() {
         let mut lp = ListPack::new();
 
+        lp.append_str("hello");
+        assert_eq!(lp.length(), 1);
 
         assert_eq!(2 + 2, 4);
     }

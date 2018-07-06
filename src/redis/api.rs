@@ -1380,8 +1380,8 @@ pub fn thread_safe_context_unlock(ctx: *mut RedisModuleCtx) {
 ///
 /// See https://redis.io/topics/notifications for more information.
 pub fn subscribe_to_keyspace_events(ctx: *mut RedisModuleCtx,
-                                    types: libc::c_int,
-                                    callback: Option<RedisModuleNotificationFunc>) -> libc::c_int {
+                                    types: NotifyFlags,
+                                    callback: Option<RedisModuleNotificationFunc>) -> Status {
     unsafe { RedisModule_SubscribeToKeyspaceEvents(ctx, types, callback) }
 }
 
@@ -1411,7 +1411,7 @@ pub fn subscribe_to_keyspace_events(ctx: *mut RedisModuleCtx,
 pub fn create_timer(ctx: *mut RedisModuleCtx,
                     period: libc::c_longlong,
                     callback: Option<RedisModuleTimerProc>,
-                    data: *mut u8) -> RedisModuleTimerID {
+                    data: *mut libc::c_void) -> RedisModuleTimerID {
     unsafe { RedisModule_CreateTimer(ctx, period, callback, data) }
 }
 
@@ -1719,16 +1719,21 @@ extern "C" {
     static RedisModule_ThreadSafeContextUnlock:
     extern "C" fn(ctx: *mut RedisModuleCtx);
 
+    fn Export_RedisModule_SubscribeToKeyspaceEvents(
+        ctx: *mut RedisModuleCtx,
+        types: libc::c_int,
+        callback: Option<RedisModuleNotificationFunc>) -> libc::c_int;
+
     static RedisModule_SubscribeToKeyspaceEvents:
     extern "C" fn(ctx: *mut RedisModuleCtx,
-                  types: libc::c_int,
-                  callback: Option<RedisModuleNotificationFunc>) -> libc::c_int;
+                  types: NotifyFlags,
+                  callback: Option<RedisModuleNotificationFunc>) -> Status;
 
     static RedisModule_CreateTimer:
     extern "C" fn(ctx: *mut RedisModuleCtx,
                   types: libc::c_longlong,
                   callback: Option<RedisModuleTimerProc>,
-                  data: *mut u8) -> RedisModuleTimerID;
+                  data: *mut libc::c_void) -> RedisModuleTimerID;
 
     static RedisModule_StopTimer:
     extern "C" fn(ctx: *mut RedisModuleCtx,

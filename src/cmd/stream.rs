@@ -54,11 +54,6 @@ impl Command for AddCommand {
     fn run(&self, r: Redis, _: &[&str]) -> Result<(), CellError> {
         let _time_reply = r.call("GET", &["hi"]).unwrap();
 
-        let _timer_id = r.create_timer(
-            1000,
-            Some(AddCommand::timer_callback),
-        );
-
         // Get throttle key
         r.reply_array(4)?;
         r.reply_integer(1)?;

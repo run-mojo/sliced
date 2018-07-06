@@ -1,7 +1,8 @@
-extern crate libc;
+//extern crate libc;
 
+use libc;
 use error::CellError;
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use std::error::Error;
 use std::iter;
 use std::ptr;
@@ -45,6 +46,21 @@ pub enum Reply {
     Unknown,
 }
 
+//pub fn run_on_event_loop<F>(ctx: *mut api::RedisModuleCtx, millis: i64, f: F) -> api::RedisModuleTimerID where F: Fn() {
+//    let mut x = 0 as *mut u8;
+//    api::create_timer(
+//        ctx,
+//        millis,
+//        Some(sliced_timer_callback_wrapper::<F>),
+//        unsafe { (&mut x) as *mut _ as *mut *mut libc::c_void })
+//    )
+//}
+//
+//pub fn cancel_timer(ctx: *mut api::RedisModuleCtx, timer_id: api::RedisModuleTimerID) -> api::Status {
+//    let mut x = 0 as *mut u8;
+//    api::stop_timer(ctx, timer_id, (&mut x) as *mut _ as *mut *mut libc::c_void)
+//}
+
 pub trait DataType {
     fn redis_type(&self) -> &'static api::RedisModuleType;
 
@@ -83,7 +99,7 @@ impl Command {
     ) -> api::Status {
 //        let timers: &mut HashMap<i64, &'a mut TimerHandle> = &mut HashMap::new();
 
-        let r = Redis { ctx, };
+        let r = Redis { ctx };
 
 //        timers.insert(0, &TimerHandle{ redis: r, callback: None });
 
@@ -102,43 +118,81 @@ impl Command {
     }
 }
 
+trait Timer {
+    fn handle(&self);
+}
+
 /// Owned by Redis
-pub struct TimerHandle {
-    pub redis: &'static mut Redis,
+pub struct TimerHandle<'a> {
+    pub redis: &'a Redis,
     pub callback: Option<api::RedisModuleTimerProc>,
+}
+
+impl<'a> TimerHandle<'a> {
+    fn delete() {}
+}
+
+impl<'a> Timer for TimerHandle<'a> {
+    fn handle(&self) {}
 }
 
 pub struct Cluster;
 
-pub struct App {
+pub type TimerID = api::RedisModuleTimerID;
 
-}
+pub struct App {}
 
-impl App {
-
-}
+impl App {}
 
 /// Redis is a structure that's designed to give us a high-level interface to
 /// the Redis module API by abstracting away the raw C FFI calls.
 pub struct Redis {
     pub ctx: *mut api::RedisModuleCtx,
-//    pub timers: *mut HashMap<i64, &'static mut TimerHandle>,
+
+}
+
+extern "C" fn sliced_timer_callback(
+    value: *mut libc::c_void,
+) {
+    println!("sliced_timer_callback");
+}
+
+extern "C" fn sliced_timer_callback_wrapper<F>(
+    closure: *mut libc::c_void,
+) where F: Fn() {
+    let closure = closure as *mut F;
+    unsafe {
+        let res = (*closure)();
+    }
+    println!("sliced_timer_callback");
 }
 
 impl Redis {
-    pub fn create_timer(
-        &self,
-        period: i64,
-        callback: Option<api::RedisModuleTimerProc>) -> api::RedisModuleTimerID {
-
-//        self.timers.insert(0, &mut TimerHandle{ redis: self.borrow_mut(), callback: None });
-
+    /// Executes the closure on the Redis event-loop after the specified
+    /// time in milliseconds have elapsed.
+    pub fn start_timer<F>(&self, millis: i64, f: F) -> api::RedisModuleTimerID where F: Fn() {
+        let mut x = 0 as *mut u8;
         api::create_timer(
             self.ctx,
-            period as libc::c_longlong,
-            callback,
-            ptr::null_mut(),
-        )
+            millis,
+            Some(sliced_timer_callback_wrapper::<F>),
+            unsafe { (&mut x) as *mut _ as *mut libc::c_void })
+    }
+
+    /// Executes the closure on the Redis event-loop.
+    pub fn run<F>(&self, f: F) -> api::RedisModuleTimerID where F: Fn() {
+        let mut x = 0 as *mut u8;
+        api::create_timer(
+            self.ctx,
+            0,
+            Some(sliced_timer_callback_wrapper::<F>),
+            unsafe { (&mut x) as *mut _ as *mut libc::c_void })
+    }
+
+    ///
+    pub fn cancel_timer(&self, timer_id: api::RedisModuleTimerID) -> api::Status {
+        let mut x = 0 as *mut u8;
+        api::stop_timer(self.ctx, timer_id, (&mut x) as *mut _ as *mut *mut libc::c_void)
     }
 
     ///

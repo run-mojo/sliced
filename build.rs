@@ -1,6 +1,5 @@
-extern crate gcc;
-
 extern crate cpp_build;
+extern crate gcc;
 
 fn main() {
 //    println!("cargo:rustc-link-lib=static:/Users/clay/repos/sliced/src/libredis.a");
@@ -18,6 +17,9 @@ fn main() {
         .file("src/c/listpack.c")
         .file("src/c/rax.c")
         .file("src/c/sds.c")
+        .file("src/c/siphash.c")
+        .file("src/c/sha1.c")
+        .file("src/c/dict.c")
         .include("src/c/")
         .compile("libredismodule.a");
 

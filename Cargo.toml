@@ -16,6 +16,7 @@ dlopen = "0.1"
 dlopen_derive = "0.1.2"
 lazy_static = "1.0"
 const-cstr = "0.3.0"
+cpp = "0.3"
 
 [build-dependencies]
 gcc = "0.3"
