@@ -103,8 +103,12 @@ bitflags! {
     }
 }
 
+pub const NOTIFY_ALL: NotifyFlags = NotifyFlags::ALL;
+
+pub type NotifyFlags = _NotifyFlags;
+
 bitflags! {
-    pub struct NotifyFlags: libc::c_int {
+    pub struct _NotifyFlags: libc::c_int {
         const GENERIC = (1 << 2);   // g
         const STRING = (1 << 3);    // $
         const LIST = (1 << 4);      // l
@@ -147,7 +151,7 @@ pub type RedisModuleTimerID = libc::uint64_t;
 #[repr(C)]
 pub struct RedisModule;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct RedisModuleCtx;
 

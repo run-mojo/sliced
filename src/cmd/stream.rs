@@ -1,7 +1,7 @@
 extern crate libc;
 extern crate time;
 
-use error::CellError;
+use error::SlicedError;
 use redis::{Command, Redis};
 use redis::api;
 
@@ -51,7 +51,7 @@ impl Command for AddCommand {
         "mo.add"
     }
 
-    fn run(&self, r: Redis, _: &[&str]) -> Result<(), CellError> {
+    fn run(&self, r: Redis, _: &[&str]) -> Result<(), SlicedError> {
         let _time_reply = r.call("GET", &["hi"]).unwrap();
 
         // Get throttle key

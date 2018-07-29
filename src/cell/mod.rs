@@ -2,7 +2,7 @@ extern crate time;
 
 pub mod store;
 
-use error::CellError;
+use error::SlicedError;
 
 // Maximum number of times to retry set_if_not_exists/compare_and_swap
 // operations before returning an error.
@@ -90,7 +90,7 @@ impl<'a, T: 'a + store::Store> RateLimiter<'a, T> {
         &mut self,
         key: &str,
         quantity: i64,
-    ) -> Result<(bool, RateLimitResult), CellError> {
+    ) -> Result<(bool, RateLimitResult), SlicedError> {
         let mut rlc = RateLimitResult {
             limit:       self.limit,
             remaining:   0,
@@ -278,7 +278,7 @@ mod tests {
     extern crate time;
 
     use cell::*;
-    use error::CellError;
+    use error::SlicedError;
     use std::error::Error;
 
     #[test]
@@ -491,7 +491,7 @@ mod tests {
             old: i64,
             new: i64,
             ttl: time::Duration,
-        ) -> Result<bool, CellError> {
+        ) -> Result<bool, SlicedError> {
             if self.fail_updates {
                 Ok(false)
             } else {
@@ -499,7 +499,7 @@ mod tests {
             }
         }
 
-        fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), CellError> {
+        fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), SlicedError> {
             let tup = self.store.get_with_time(key)?;
             Ok((tup.0, self.clock))
         }
@@ -513,7 +513,7 @@ mod tests {
             key: &str,
             value: i64,
             ttl: time::Duration,
-        ) -> Result<bool, CellError> {
+        ) -> Result<bool, SlicedError> {
             if self.fail_updates {
                 Ok(false)
             } else {

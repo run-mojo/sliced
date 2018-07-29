@@ -159,6 +159,7 @@ typedef struct raxIterator {
 extern void *raxNotFound;
 
 /* Exported API. */
+
 rax *raxNew(void);
 int raxInsert(rax *rax, unsigned char *s, size_t len, void *data, void **old);
 int raxTryInsert(rax *rax, unsigned char *s, size_t len, void *data, void **old);

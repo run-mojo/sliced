@@ -1,6 +1,6 @@
 extern crate time;
 
-use error::CellError;
+use error::SlicedError;
 use redis;
 use std::collections::HashMap;
 
@@ -22,13 +22,13 @@ pub trait Store {
         old: i64,
         new: i64,
         ttl: time::Duration,
-    ) -> Result<bool, CellError>;
+    ) -> Result<bool, SlicedError>;
 
     /// Gets the given key's value and the current time as dictated by the
     /// store (this is done so that rate limiters running on a variety of
     /// different nodes can operate with a consistent clock instead of using
     /// their own). If the key was unset, -1 is returned.
-    fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), CellError>;
+    fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), SlicedError>;
 
     /// Logs a debug message to the data store.
     fn log_debug(&self, message: &str);
@@ -40,7 +40,7 @@ pub trait Store {
         key: &str,
         value: i64,
         ttl: time::Duration,
-    ) -> Result<bool, CellError>;
+    ) -> Result<bool, SlicedError>;
 }
 
 /// `MemoryStore` is a simple implementation of Store that persists data in an in-memory
@@ -74,7 +74,7 @@ impl Store for MemoryStore {
         old: i64,
         new: i64,
         _: time::Duration,
-    ) -> Result<bool, CellError> {
+    ) -> Result<bool, SlicedError> {
         match self.map.get(key) {
             Some(n) if *n != old => return Ok(false),
             _ => (),
@@ -84,7 +84,7 @@ impl Store for MemoryStore {
         Ok(true)
     }
 
-    fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), CellError> {
+    fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), SlicedError> {
         match self.map.get(key) {
             Some(n) => Ok((*n, time::now_utc())),
             None => Ok((-1, time::now_utc())),
@@ -102,7 +102,7 @@ impl Store for MemoryStore {
         key: &str,
         value: i64,
         _: time::Duration,
-    ) -> Result<bool, CellError> {
+    ) -> Result<bool, SlicedError> {
         match self.map.get(key) {
             Some(_) => Ok(false),
             None => {
@@ -134,7 +134,7 @@ impl<'a> Store for InternalRedisStore<'a> {
         old: i64,
         new: i64,
         ttl: time::Duration,
-    ) -> Result<bool, CellError> {
+    ) -> Result<bool, SlicedError> {
         let key = self.r.open_key_writable(key);
         match key.read()? {
             Some(s) => {
@@ -159,7 +159,7 @@ impl<'a> Store for InternalRedisStore<'a> {
         }
     }
 
-    fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), CellError> {
+    fn get_with_time(&self, key: &str) -> Result<(i64, time::Tm), SlicedError> {
         // TODO: currently leveraging that CommandError and CellError are the
         // same thing, but we should probably reconcile this.
         let key = self.r.open_key(key);
@@ -181,7 +181,7 @@ impl<'a> Store for InternalRedisStore<'a> {
         key: &str,
         value: i64,
         ttl: time::Duration,
-    ) -> Result<bool, CellError> {
+    ) -> Result<bool, SlicedError> {
         let key = self.r.open_key_writable(key);
         let res = if key.is_empty()? {
             key.write(value.to_string().as_str())?;

@@ -7,7 +7,7 @@ pub struct DataTypes {
 //    histogram: HistogramType
 }
 
-pub fn create_redis_types(ctx: *mut api::RedisModuleCtx) -> api::Status {
+pub fn load(ctx: *mut api::RedisModuleCtx) -> api::Status {
     api::create_data_type(ctx,
                           format!("{}\0", "histogram").as_ptr(),
                           0,

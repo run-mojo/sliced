@@ -71,6 +71,7 @@ static inline char sdsReqType(size_t string_size) {
     return SDS_TYPE_64;
 }
 
+
 /* Create a new sds string with the content specified by the 'init' pointer
  * and 'initlen'.
  * If NULL is used for 'init' the string is initialized with zero bytes.

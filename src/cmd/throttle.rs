@@ -1,7 +1,7 @@
 extern crate libc;
 extern crate time;
 
-use error::{CellError};
+use error::{SlicedError};
 
 use redis::{Command, Redis};
 use redis::api;
@@ -53,7 +53,7 @@ impl Command for ThrottleCommand {
 
     //noinspection RsTypeCheck
     // Run the command.
-    fn run(&self, r: Redis, args: &[&str]) -> Result<(), CellError> {
+    fn run(&self, r: Redis, args: &[&str]) -> Result<(), SlicedError> {
         if args.len() != 5 && args.len() != 6 {
             return Err(error!(
                 "Usage: {} <key> <max_burst> <count per period> \

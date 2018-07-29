@@ -35,6 +35,7 @@
 
 #define SDS_MAX_PREALLOC (1024*1024)
 const char *SDS_NOINIT;
+const int SDS_HDR5_SIZE;
 
 #include <sys/types.h>
 #include <stdarg.h>
@@ -83,6 +84,8 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
+
+
 
 static inline size_t sdslen(const sds s) {
     unsigned char flags = s[-1];
@@ -266,6 +269,8 @@ void *sdsAllocPtr(sds s);
 void *sds_malloc(size_t size);
 void *sds_realloc(void *ptr, size_t size);
 void sds_free(void *ptr);
+
+
 
 #ifdef REDIS_TEST
 int sdsTest(int argc, char *argv[]);

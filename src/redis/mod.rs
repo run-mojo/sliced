@@ -1,7 +1,7 @@
 //extern crate libc;
 
+use error::SlicedError;
 use libc;
-use error::CellError;
 //use std::collections::HashMap;
 use std::error::Error;
 use std::iter;
@@ -23,7 +23,8 @@ pub mod listpack;
 #[cfg_attr(feature = "cargo-clippy",
 allow(redundant_field_names, suspicious_arithmetic_impl))]
 pub mod rax;
-pub mod exe;
+pub mod sds;
+//pub mod stream;
 
 /// `LogLevel` is a level of logging to be specified with a Redis log directive.
 #[derive(Clone, Copy, Debug)]
@@ -45,6 +46,8 @@ pub enum Reply {
     String(String),
     Unknown,
 }
+
+pub type Status = api::Status;
 
 //pub fn run_on_event_loop<F>(ctx: *mut api::RedisModuleCtx, millis: i64, f: F) -> api::RedisModuleTimerID where F: Fn() {
 //    let mut x = 0 as *mut u8;
@@ -80,7 +83,7 @@ pub trait Command {
     fn name(&self) -> &'static str;
 
     // Run the command.
-    fn run(&self, r: Redis, args: &[&str]) -> Result<(), CellError>;
+    fn run(&self, r: Redis, args: &[&str]) -> Result<(), SlicedError>;
 
     // Should return any flags to be registered with the name as a string
     // separated list. See the Redis module API documentation for a complete
@@ -118,85 +121,60 @@ impl Command {
     }
 }
 
-trait Timer {
-    fn handle(&self);
-}
-
-/// Owned by Redis
-pub struct TimerHandle<'a> {
-    pub redis: &'a Redis,
-    pub callback: Option<api::RedisModuleTimerProc>,
-}
-
-impl<'a> TimerHandle<'a> {
-    fn delete() {}
-}
-
-impl<'a> Timer for TimerHandle<'a> {
-    fn handle(&self) {}
-}
-
 pub struct Cluster;
 
 pub type TimerID = api::RedisModuleTimerID;
 
-pub struct App {}
-
-impl App {}
-
 /// Redis is a structure that's designed to give us a high-level interface to
 /// the Redis module API by abstracting away the raw C FFI calls.
+#[derive(Clone, Copy)]
 pub struct Redis {
     pub ctx: *mut api::RedisModuleCtx,
-
 }
 
-extern "C" fn sliced_timer_callback(
-    value: *mut libc::c_void,
-) {
-    println!("sliced_timer_callback");
+extern "C" fn sliced_timer_callback(_value: *mut libc::c_void) {
+    // Ignore
 }
 
 extern "C" fn sliced_timer_callback_wrapper<F>(
-    closure: *mut libc::c_void,
-) where F: Fn() {
+    closure: *mut libc::c_void) where F: Fn() {
     let closure = closure as *mut F;
     unsafe {
         let res = (*closure)();
     }
-    println!("sliced_timer_callback");
 }
 
 impl Redis {
     /// Executes the closure on the Redis event-loop after the specified
     /// time in milliseconds have elapsed.
-    pub fn start_timer<F>(&self, millis: i64, f: F) -> api::RedisModuleTimerID where F: Fn() {
+    pub fn start_timer<F>(&self, millis: i64, f: F) -> TimerID where F: Fn() {
         let mut x = 0 as *mut u8;
         api::create_timer(
             self.ctx,
             millis,
             Some(sliced_timer_callback_wrapper::<F>),
-            unsafe { (&mut x) as *mut _ as *mut libc::c_void })
+            (&mut x) as *mut _ as *mut libc::c_void)
     }
 
     /// Executes the closure on the Redis event-loop.
-    pub fn run<F>(&self, f: F) -> api::RedisModuleTimerID where F: Fn() {
+    /// This can be called from background threads.
+    pub fn run<F>(&self, f: F) -> TimerID where F: Fn() {
         let mut x = 0 as *mut u8;
         api::create_timer(
             self.ctx,
             0,
             Some(sliced_timer_callback_wrapper::<F>),
-            unsafe { (&mut x) as *mut _ as *mut libc::c_void })
+            (&mut x) as *mut _ as *mut libc::c_void)
     }
 
-    ///
-    pub fn cancel_timer(&self, timer_id: api::RedisModuleTimerID) -> api::Status {
+    /// Cancels a timer by it's ID.
+    pub fn cancel_timer(&self, timer_id: TimerID) -> api::Status {
         let mut x = 0 as *mut u8;
         api::stop_timer(self.ctx, timer_id, (&mut x) as *mut _ as *mut *mut libc::c_void)
     }
 
     ///
-    pub fn call(&self, command: &str, args: &[&str]) -> Result<Reply, CellError> {
+    pub fn call(&self, command: &str, args: &[&str]) -> Result<Reply, SlicedError> {
         log_debug!(self, "{} [began] args = {:?}", command, args);
 
         // We use a "format" string to tell redis what types we're passing in.
@@ -290,8 +268,8 @@ impl Redis {
     /// unmodified.
     pub fn coerce_integer(
         &self,
-        reply_res: Result<Reply, CellError>,
-    ) -> Result<Reply, CellError> {
+        reply_res: Result<Reply, SlicedError>,
+    ) -> Result<Reply, SlicedError> {
         match reply_res {
             Ok(Reply::String(s)) => match s.parse::<i64>() {
                 Ok(n) => Ok(Reply::Integer(n)),
@@ -337,21 +315,21 @@ impl Redis {
     ///
     /// Used by invoking once with the expected length and then calling any
     /// combination of the other reply_* methods exactly that number of times.
-    pub fn reply_array(&self, len: i64) -> Result<(), CellError> {
+    pub fn reply_array(&self, len: i64) -> Result<(), SlicedError> {
         handle_status(
             api::reply_with_array(self.ctx, len as libc::c_long),
             "Could not reply with long",
         )
     }
 
-    pub fn reply_integer(&self, integer: i64) -> Result<(), CellError> {
+    pub fn reply_integer(&self, integer: i64) -> Result<(), SlicedError> {
         handle_status(
             api::reply_with_long_long(self.ctx, integer as libc::c_longlong),
             "Could not reply with longlong",
         )
     }
 
-    pub fn reply_string(&self, message: &str) -> Result<(), CellError> {
+    pub fn reply_string(&self, message: &str) -> Result<(), SlicedError> {
         let redis_str = self.create_string(message);
         handle_status(
             api::reply_with_string(self.ctx, redis_str.str_inner),
@@ -398,7 +376,7 @@ impl RedisKey {
         self.key_inner == null_key
     }
 
-    pub fn read(&self) -> Result<Option<String>, CellError> {
+    pub fn read(&self) -> Result<Option<String>, SlicedError> {
         let val = if self.is_null() {
             None
         } else {
@@ -447,7 +425,7 @@ impl RedisKeyWritable {
     /// as you open the key in read mode, but when asking for write Redis
     /// returns a non-null pointer to allow us to write to even an empty key,
     /// so we have to check the key's value instead.
-    pub fn is_empty(&self) -> Result<bool, CellError> {
+    pub fn is_empty(&self) -> Result<bool, SlicedError> {
         match self.read()? {
             Some(s) => match s.as_str() {
                 "" => Ok(true),
@@ -457,11 +435,11 @@ impl RedisKeyWritable {
         }
     }
 
-    pub fn read(&self) -> Result<Option<String>, CellError> {
+    pub fn read(&self) -> Result<Option<String>, SlicedError> {
         Ok(Some(read_key(self.key_inner)?))
     }
 
-    pub fn set_expire(&self, expire: time::Duration) -> Result<(), CellError> {
+    pub fn set_expire(&self, expire: time::Duration) -> Result<(), SlicedError> {
         match api::set_expire(self.key_inner, expire.num_milliseconds()) {
             api::Status::Ok => Ok(()),
 
@@ -471,7 +449,7 @@ impl RedisKeyWritable {
         }
     }
 
-    pub fn write(&self, val: &str) -> Result<(), CellError> {
+    pub fn write(&self, val: &str) -> Result<(), SlicedError> {
         let val_str = RedisString::create(self.ctx, val);
         match api::string_set(self.key_inner, val_str.str_inner) {
             api::Status::Ok => Ok(()),
@@ -516,7 +494,7 @@ impl Drop for RedisString {
 }
 
 ///
-fn handle_status(status: api::Status, message: &str) -> Result<(), CellError> {
+fn handle_status(status: api::Status, message: &str) -> Result<(), SlicedError> {
     match status {
         api::Status::Ok => Ok(()),
         api::Status::Err => Err(error!(message)),
@@ -525,7 +503,7 @@ fn handle_status(status: api::Status, message: &str) -> Result<(), CellError> {
 
 fn manifest_redis_reply(
     reply: *mut api::RedisModuleCallReply,
-) -> Result<Reply, CellError> {
+) -> Result<Reply, SlicedError> {
     match api::call_reply_type(reply) {
         api::ReplyType::Integer => Ok(Reply::Integer(api::call_reply_integer(reply))),
         api::ReplyType::Nil => Ok(Reply::Nil),
@@ -534,7 +512,7 @@ fn manifest_redis_reply(
             let bytes = api::call_reply_string_ptr(reply, &mut length);
             from_byte_string(bytes, length)
                 .map(Reply::String)
-                .map_err(CellError::from)
+                .map_err(SlicedError::from)
         }
         api::ReplyType::Unknown => Ok(Reply::Unknown),
 

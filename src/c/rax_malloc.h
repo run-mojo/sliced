@@ -37,8 +37,9 @@
 
 #ifndef RAX_ALLOC_H
 #define RAX_ALLOC_H
-#include "zmalloc.h"
-#define rax_malloc zmalloc
-#define rax_realloc zrealloc
-#define rax_free zfree
+
+extern void* (*rax_malloc)(size_t);
+extern void* (*rax_realloc)(void*,size_t);
+extern void (*rax_free)(void*);
+
 #endif

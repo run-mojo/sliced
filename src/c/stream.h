@@ -1,8 +1,21 @@
 #ifndef STREAM_H
 #define STREAM_H
 
-#include "rax.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <errno.h>
+#include "server.h"
+#include "util.h"
+#include "zmalloc.h"
 #include "listpack.h"
+#include "rax.h"
+#include "sds.h"
+
+/**********************************************************************/
+// server.h
+/**********************************************************************/
+
 
 /* Stream item ID: a 128 bit number composed of a milliseconds time and
  * a sequence counter. IDs generated in the same millisecond (or in a past
@@ -86,6 +99,8 @@ typedef struct streamNACK {
                                    in the last delivery. */
 } streamNACK;
 
+
+
 /* Stream propagation informations, passed to functions in order to propagate
  * XCLAIM commands to AOF and slaves. */
 typedef struct sreamPropInfo {
@@ -98,7 +113,9 @@ struct client;
 
 stream *streamNew(void);
 void freeStream(stream *s);
-size_t streamReplyWithRange(client *c, stream *s, streamID *start, streamID *end, size_t count, int rev, streamCG *group, streamConsumer *consumer, int flags, streamPropInfo *spi);
+int streamAppendItem(stream *s, robj **argv, int64_t numfields, streamID *added_id, streamID *use_id);
+int64_t streamTrimByLength(stream *s, size_t maxlen, int approx);
+//size_t streamReplyWithRange(client *c, stream *s, streamID *start, streamID *end, size_t count, int rev, streamCG *group, streamConsumer *consumer, int flags, streamPropInfo *spi);
 void streamIteratorStart(streamIterator *si, stream *s, streamID *start, streamID *end, int rev);
 int streamIteratorGetID(streamIterator *si, streamID *id, int64_t *numfields);
 void streamIteratorGetField(streamIterator *si, unsigned char **fieldptr, unsigned char **valueptr, int64_t *fieldlen, int64_t *valuelen);
