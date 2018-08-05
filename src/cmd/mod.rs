@@ -4,6 +4,7 @@ extern crate time;
 pub mod cmd;
 pub mod throttle;
 pub mod stream;
+pub mod version;
 
 use error::{SlicedError};
 

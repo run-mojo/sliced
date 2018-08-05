@@ -1,7 +1,7 @@
 extern crate libc;
 extern crate time;
 
-use error::{SlicedError};
+use super::super::error::{SlicedError};
 
 use redis::{Command, Redis};
 use redis::api;

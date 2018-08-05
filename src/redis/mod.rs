@@ -17,6 +17,7 @@ use time;
 #[cfg_attr(feature = "cargo-clippy",
 allow(redundant_field_names, suspicious_arithmetic_impl))]
 pub mod api;
+pub mod ralloc;
 #[cfg_attr(feature = "cargo-clippy",
 allow(redundant_field_names, suspicious_arithmetic_impl))]
 pub mod listpack;
@@ -24,6 +25,10 @@ pub mod listpack;
 allow(redundant_field_names, suspicious_arithmetic_impl))]
 pub mod rax;
 pub mod sds;
+pub mod rc;
+pub mod arc;
+pub mod raw_vec;
+pub mod boxed;
 //pub mod stream;
 
 /// `LogLevel` is a level of logging to be specified with a Redis log directive.

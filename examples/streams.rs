@@ -1,9 +1,7 @@
-extern crate actix;
-extern crate memmap;
 extern crate sliced;
 extern crate time;
-extern crate page_size;
 
+use sliced::mmap::*;
 use sliced::redis::listpack::*;
 use sliced::redis::rax::*;
 use std::cmp::Ordering;
@@ -12,7 +10,7 @@ use std::fmt;
 fn main() {
     let mut s = Stream::new();
     let mut size: usize = 1024 * 2;
-    println!("PageSize: {}", page_size::get());
+    println!("PageSize: {}", sliced::page_size::get());
 
     let mut record_id = StreamID { ms: 0, seq: 0 };
 
@@ -76,8 +74,8 @@ struct Segment {
 }
 
 enum SegFile {
-    Writer(std::fs::File, memmap::MmapMut),
-    Reader(std::fs::File, memmap::Mmap),
+    Writer(std::fs::File, MmapMut),
+    Reader(std::fs::File, Mmap),
 }
 
 trait SegmentFile {
@@ -88,11 +86,11 @@ trait SegmentFile {
 
 struct SegmentWriter {
     file: std::fs::File,
-    mmap: memmap::MmapMut,
+    mmap: MmapMut,
 }
 
 struct SegmentReader {
-    mmap: memmap::Mmap,
+    mmap: Mmap,
 }
 
 

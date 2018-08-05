@@ -70,6 +70,8 @@ use std::fmt;
 use std::mem::{size_of, transmute};
 use std::ptr;
 
+use ::redis::sds::SDS;
+
 pub const GREATER: &'static str = ">";
 pub const GREATER_EQUAL: &'static str = ">=";
 pub const LESSER: &'static str = "<";
@@ -87,9 +89,9 @@ pub const RAX_ITER_SAFE: libc::c_int = (1 << 2);
 
 /// Return the existing Rax allocator.
 pub unsafe fn allocator() -> (
-    extern "C" fn(size: libc::size_t) -> *mut u8,
-    extern "C" fn(ptr: *mut libc::c_void, size: libc::size_t) -> *mut u8,
-    extern "C" fn(ptr: *mut libc::c_void)) {
+    extern "C" fn(size: usize) -> *mut u8,
+    extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8,
+    extern "C" fn(ptr: *mut u8)) {
     (rax_malloc, rax_realloc, rax_free)
 }
 
@@ -98,9 +100,9 @@ pub unsafe fn allocator() -> (
 /// Do not call this method after Rax has been used at all. This must
 /// be called before using or calling any other Rax API function.
 pub unsafe fn set_allocator(
-    malloc: extern "C" fn(size: libc::size_t) -> *mut u8,
-    realloc: extern "C" fn(ptr: *mut libc::c_void, size: libc::size_t) -> *mut u8,
-    free: extern "C" fn(ptr: *mut libc::c_void)) {
+    malloc: extern "C" fn(size: usize) -> *mut u8,
+    realloc: extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8,
+    free: extern "C" fn(ptr: *mut u8)) {
     rax_malloc = malloc;
     rax_realloc = realloc;
     rax_free = free;
@@ -115,6 +117,26 @@ pub enum RaxError {
 impl RaxError {
     pub fn generic(message: &str) -> RaxError {
         RaxError::Generic(GenericError::new(message))
+    }
+}
+
+
+impl RaxKey for SDS {
+    type Output = SDS;
+
+    #[inline(always)]
+    fn encode(self) -> Self::Output {
+        self
+    }
+
+    #[inline(always)]
+    fn to_buf(&self) -> (*const u8, usize) {
+        (self.as_ptr(), self.len())
+    }
+
+    #[inline(always)]
+    fn from_buf(ptr: *const u8, len: usize) -> SDS {
+        SDS::from_buf(ptr, len)
     }
 }
 
@@ -205,8 +227,10 @@ impl<K: RaxKey, V> Drop for RaxMap<K, V> {
     fn drop(&mut self) {
         unsafe {
             println!("dropped RAX");
-            // Cleanup RAX
-            raxFreeWithCallback(self.rax, RaxFreeWithCallbackWrapper::<V>);
+            if !self.rax.is_null() {
+                // Cleanup RAX
+                raxFreeWithCallback(self.rax, RaxFreeWithCallbackWrapper::<V>);
+            }
         }
     }
 }
@@ -556,14 +580,9 @@ impl<K: RaxKey, V> RaxMap<K, V> {
 
     ///
     #[inline]
-    pub fn seek_min<F>(
-        &mut self,
-        f: F,
-    ) where
-        F: Fn(
-            &mut RaxMap<K, V>,
-            &mut RaxIterator<K, V>,
-        ) {
+    pub fn first_key(
+        &self
+    ) -> Option<K> {
         unsafe {
             // Allocate stack memory.
             let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
@@ -571,23 +590,24 @@ impl<K: RaxKey, V> RaxMap<K, V> {
             // to initialize the iterator, and must be followed by a raxSeek() call,
             // otherwise the raxPrev()/raxNext() functions will just return EOF.
             raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_min();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
+            if raxSeek(
+                &iter as *const _ as *const raxIterator,
+                BEGIN.as_ptr(),
+                std::ptr::null_mut(),
+                0
+            ) != 0 || iter.key_len == 0 {
+                None
+            } else {
+                Some(K::from_buf(iter.key, iter.key_len))
+            }
         }
     }
 
     ///
     #[inline]
-    pub fn seek_min_result<R, F>(
-        &mut self,
-        f: F,
-    ) -> Result<R, RaxError>
-        where
-            F: Fn(
-                &mut RaxMap<K, V>,
-                &mut RaxIterator<K, V>,
-            ) -> Result<R, RaxError> {
+    pub fn last_key(
+        &self
+    ) -> Option<K> {
         unsafe {
             // Allocate stack memory.
             let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
@@ -595,62 +615,42 @@ impl<K: RaxKey, V> RaxMap<K, V> {
             // to initialize the iterator, and must be followed by a raxSeek() call,
             // otherwise the raxPrev()/raxNext() functions will just return EOF.
             raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_min();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
-        }
-    }
-
-    ///
-    #[inline]
-    pub fn seek_max<F>(
-        &mut self,
-        f: F,
-    ) where
-        F: Fn(
-            &mut RaxMap<K, V>,
-            &mut RaxIterator<K, V>,
-        ) {
-        unsafe {
-            // Allocate stack memory.
-            let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
-            // Initialize a Rax iterator. This call should be performed a single time
-            // to initialize the iterator, and must be followed by a raxSeek() call,
-            // otherwise the raxPrev()/raxNext() functions will just return EOF.
-            raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_max();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
-        }
-    }
-
-    ///
-    #[inline]
-    pub fn seek_max_result<R, F>(
-        &mut self,
-        f: F,
-    ) -> Result<R, RaxError>
-        where
-            F: Fn(
-                &mut RaxMap<K, V>,
-                &mut RaxIterator<K, V>,
-            ) -> Result<R, RaxError> {
-        unsafe {
-            // Allocate stack memory.
-            let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
-            // Initialize a Rax iterator. This call should be performed a single time
-            // to initialize the iterator, and must be followed by a raxSeek() call,
-            // otherwise the raxPrev()/raxNext() functions will just return EOF.
-            raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_max();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
+            if raxSeek(&iter as *const _ as *const raxIterator, END.as_ptr(), std::ptr::null_mut(), 0) != 0 || iter.key_len == 0 {
+                None
+            } else {
+                Some(K::from_buf(iter.key, iter.key_len))
+            }
         }
     }
 
     ///
     #[inline]
     pub fn seek<F>(
+        &self,
+        op: &str,
+        key: K,
+        f: F,
+    ) where
+        F: Fn(
+            &RaxMap<K, V>,
+            &mut RaxIterator<K, V>,
+        ) {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            iter.seek(op, key);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn seek_mut<F>(
         &mut self,
         op: &str,
         key: K,
@@ -676,6 +676,32 @@ impl<K: RaxKey, V> RaxMap<K, V> {
     ///
     #[inline]
     pub fn seek_result<R, F>(
+        &self,
+        op: &str,
+        key: K,
+        f: F,
+    ) -> Result<R, RaxError>
+        where
+            F: Fn(
+                &RaxMap<K, V>,
+                &mut RaxIterator<K, V>,
+            ) -> Result<R, RaxError> {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            iter.seek(op, key);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn seek_result_mut<R, F>(
         &mut self,
         op: &str,
         key: K,
@@ -701,7 +727,22 @@ impl<K: RaxKey, V> RaxMap<K, V> {
 
     ///
     #[inline]
-    pub fn iter<F>(&mut self, f: F) where F: Fn(&mut RaxMap<K, V>, &mut RaxIterator<K, V>) {
+    pub fn iter<F>(&self, f: F) where F: Fn(&RaxMap<K, V>, &mut RaxIterator<K, V>) {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn iter_mut<F>(&mut self, f: F) where F: Fn(&mut RaxMap<K, V>, &mut RaxIterator<K, V>) {
         unsafe {
             // Allocate stack memory.
             let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
@@ -717,6 +758,25 @@ impl<K: RaxKey, V> RaxMap<K, V> {
     ///
     #[inline]
     pub fn iter_result<F, R>(
+        &self, f: F,
+    ) -> Result<R, RaxError>
+        where
+            F: Fn(&RaxMap<K, V>, &mut RaxIterator<K, V>) -> Result<R, RaxError> {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, V> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn iter_result_mut<F, R>(
         &mut self, f: F,
     ) -> Result<R, RaxError>
         where
@@ -889,101 +949,32 @@ impl<K: RaxKey> RaxSet<K> {
 
     ///
     #[inline]
-    pub fn seek_min<F>(
-        &mut self,
-        f: F,
-    ) where
-        F: Fn(
-            &mut RaxSet<K>,
-            &mut RaxIterator<K, usize>,
-        ) {
-        unsafe {
-            // Allocate stack memory.
-            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
-            // Initialize a Rax iterator. This call should be performed a single time
-            // to initialize the iterator, and must be followed by a raxSeek() call,
-            // otherwise the raxPrev()/raxNext() functions will just return EOF.
-            raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_min();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
-        }
-    }
-
-    ///
-    #[inline]
-    pub fn seek_min_result<R, F>(
-        &mut self,
-        f: F,
-    ) -> Result<R, RaxError>
-        where
-            F: Fn(
-                &mut RaxSet<K>,
-                &mut RaxIterator<K, usize>,
-            ) -> Result<R, RaxError> {
-        unsafe {
-            // Allocate stack memory.
-            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
-            // Initialize a Rax iterator. This call should be performed a single time
-            // to initialize the iterator, and must be followed by a raxSeek() call,
-            // otherwise the raxPrev()/raxNext() functions will just return EOF.
-            raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_min();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
-        }
-    }
-
-    ///
-    #[inline]
-    pub fn seek_max<F>(
-        &mut self,
-        f: F,
-    ) where
-        F: Fn(
-            &mut RaxSet<K>,
-            &mut RaxIterator<K, usize>,
-        ) {
-        unsafe {
-            // Allocate stack memory.
-            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
-            // Initialize a Rax iterator. This call should be performed a single time
-            // to initialize the iterator, and must be followed by a raxSeek() call,
-            // otherwise the raxPrev()/raxNext() functions will just return EOF.
-            raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_max();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
-        }
-    }
-
-    ///
-    #[inline]
-    pub fn seek_max_result<R, F>(
-        &mut self,
-        f: F,
-    ) -> Result<R, RaxError>
-        where
-            F: Fn(
-                &mut RaxSet<K>,
-                &mut RaxIterator<K, usize>,
-            ) -> Result<R, RaxError> {
-        unsafe {
-            // Allocate stack memory.
-            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
-            // Initialize a Rax iterator. This call should be performed a single time
-            // to initialize the iterator, and must be followed by a raxSeek() call,
-            // otherwise the raxPrev()/raxNext() functions will just return EOF.
-            raxStart(&iter as *const _ as *const raxIterator, self.rax);
-            iter.seek_max();
-            // Borrow stack iterator and execute the closure.
-            f(self, &mut iter)
-        }
-    }
-
-    ///
-    #[inline]
     pub fn seek<F>(
+        &self,
+        op: &str,
+        key: K,
+        f: F,
+    ) where
+        F: Fn(
+            &RaxSet<K>,
+            &mut RaxIterator<K, usize>,
+        ) {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            iter.seek(op, key);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn seek_mut<F>(
         &mut self,
         op: &str,
         key: K,
@@ -1016,6 +1007,32 @@ impl<K: RaxKey> RaxSet<K> {
     ) -> Result<R, RaxError>
         where
             F: Fn(
+                &RaxSet<K>,
+                &mut RaxIterator<K, usize>,
+            ) -> Result<R, RaxError> {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            iter.seek(op, key);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn seek_result_mut<R, F>(
+        &mut self,
+        op: &str,
+        key: K,
+        f: F,
+    ) -> Result<R, RaxError>
+        where
+            F: Fn(
                 &mut RaxSet<K>,
                 &mut RaxIterator<K, usize>,
             ) -> Result<R, RaxError> {
@@ -1034,7 +1051,22 @@ impl<K: RaxKey> RaxSet<K> {
 
     ///
     #[inline]
-    pub fn iter<F>(&mut self, f: F) where F: Fn(&mut RaxSet<K>, &mut RaxIterator<K, usize>) {
+    pub fn iter<F>(&self, f: F) where F: Fn(&RaxSet<K>, &mut RaxIterator<K, usize>) {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn iter_mut<F>(&mut self, f: F) where F: Fn(&mut RaxSet<K>, &mut RaxIterator<K, usize>) {
         unsafe {
             // Allocate stack memory.
             let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
@@ -1050,6 +1082,25 @@ impl<K: RaxKey> RaxSet<K> {
     ///
     #[inline]
     pub fn iter_result<F, R>(
+        &self, f: F,
+    ) -> Result<R, RaxError>
+        where
+            F: Fn(&RaxSet<K>, &mut RaxIterator<K, usize>) -> Result<R, RaxError> {
+        unsafe {
+            // Allocate stack memory.
+            let mut iter: RaxIterator<K, usize> = std::mem::uninitialized();
+            // Initialize a Rax iterator. This call should be performed a single time
+            // to initialize the iterator, and must be followed by a raxSeek() call,
+            // otherwise the raxPrev()/raxNext() functions will just return EOF.
+            raxStart(&iter as *const _ as *const raxIterator, self.rax);
+            // Borrow stack iterator and execute the closure.
+            f(self, &mut iter)
+        }
+    }
+
+    ///
+    #[inline]
+    pub fn iter_result_mut<F, R>(
         &mut self, f: F,
     ) -> Result<R, RaxError>
         where
@@ -1163,7 +1214,7 @@ impl<K: RaxKey> RaxSet<K> {
 //}
 
 
-pub trait RaxKey<RHS = Self>: Clone + Default + std::fmt::Debug {
+pub trait RaxKey<RHS = Self>: Clone + Default + Send + Sync {
     type Output: RaxKey;
 
     fn encode(self) -> Self::Output;
@@ -1837,7 +1888,8 @@ pub struct raxIterator;
 extern "C" fn RaxFreeWithCallbackWrapper<V>(v: *mut libc::c_void) {
     unsafe {
         // Re-box it so it can drop it immediately after it leaves this scope.
-        Box::from_raw(v as *mut V);
+//        Box::from_raw(v as *mut V);
+        std::rc::Rc::from_raw(v as *const V);
     }
 }
 
@@ -1857,26 +1909,26 @@ extern "C" {
     pub static raxNotFound: *mut u8;
 
     #[no_mangle]
-    pub static mut rax_malloc: extern "C" fn(size: libc::size_t) -> *mut u8;
+    pub static mut rax_malloc: extern "C" fn(size: usize) -> *mut u8;
     #[no_mangle]
-    pub static mut rax_realloc: extern "C" fn(ptr: *mut libc::c_void, size: libc::size_t) -> *mut u8;
+    pub static mut rax_realloc: extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8;
     #[no_mangle]
-    pub static mut rax_free: extern "C" fn(ptr: *mut libc::c_void);
+    pub static mut rax_free: extern "C" fn(ptr: *mut u8);
 
     fn raxIteratorSize() -> libc::c_int;
 
-    fn raxNew() -> *mut rax;
+    pub fn raxNew() -> *mut rax;
 
-    fn raxFree(
+    pub fn raxFree(
         rax: *mut rax
     );
 
-    fn raxFreeWithCallback(
+    pub fn raxFreeWithCallback(
         rax: *mut rax,
         callback: RaxFreeCallback,
     );
 
-    fn raxInsert(
+    pub fn raxInsert(
         rax: *mut rax,
         s: *const u8,
         len: libc::size_t,
@@ -1884,7 +1936,7 @@ extern "C" {
         old: &mut *mut u8,
     ) -> libc::c_int;
 
-    fn raxTryInsert(
+    pub fn raxTryInsert(
         rax: *mut rax,
         s: *const u8,
         len: libc::size_t,
@@ -1892,56 +1944,56 @@ extern "C" {
         old: *mut *mut u8,
     ) -> libc::c_int;
 
-    fn raxRemove(
+    pub fn raxRemove(
         rax: *mut rax,
         s: *const u8,
         len: libc::size_t,
         old: &mut *mut u8,
     ) -> libc::c_int;
 
-    fn raxFind(
+    pub fn raxFind(
         rax: *mut rax,
         s: *const u8,
         len: libc::size_t,
     ) -> *mut u8;
 
-    fn raxIteratorNew(
+    pub fn raxIteratorNew(
         rt: *mut rax
     ) -> *mut raxIterator;
 
-    fn raxStart(
+    pub fn raxStart(
         it: *const raxIterator,
         rt: *mut rax,
     );
 
-    fn raxSeek(
+    pub fn raxSeek(
         it: *const raxIterator,
         op: *const u8,
         ele: *const u8,
         len: libc::size_t,
     ) -> libc::c_int;
 
-    fn raxNext(
+    pub fn raxNext(
         it: *const raxIterator
     ) -> libc::c_int;
 
-    fn raxPrev(
+    pub fn raxPrev(
         it: *const raxIterator
     ) -> libc::c_int;
 
-    fn raxRandomWalk(
+    pub fn raxRandomWalk(
         it: *const raxIterator,
         steps: libc::size_t,
     ) -> libc::c_int;
 
-    fn raxCompare(
+    pub fn raxCompare(
         it: *const raxIterator,
         op: *const u8,
         key: *mut u8,
         key_len: libc::size_t,
     ) -> libc::c_int;
 
-    fn raxStop(
+    pub fn raxStop(
         it: *const raxIterator
     );
 
@@ -1953,7 +2005,7 @@ extern "C" {
         rax: *mut rax
     );
 
-    fn raxSize(
+    pub fn raxSize(
         rax: *mut rax
     ) -> libc::uint64_t;
 }
@@ -1967,24 +2019,24 @@ mod tests {
     use std::time::{Duration, Instant};
     use redis::rax::*;
 
-    extern "C" fn rax_malloc_hook(size: libc::size_t) -> *mut u8 {
+    extern "C" fn rax_malloc_hook(size: usize) -> *mut u8 {
         unsafe {
             println!("malloc");
             libc::malloc(size) as *mut u8
         }
     }
 
-    extern "C" fn rax_realloc_hook(ptr: *mut libc::c_void, size: libc::size_t) -> *mut u8 {
+    extern "C" fn rax_realloc_hook(ptr: *mut u8, size: usize) -> *mut u8 {
         unsafe {
             println!("realloc");
-            libc::realloc(ptr, size) as *mut u8
+            libc::realloc(ptr as *mut libc::c_void, size) as *mut u8
         }
     }
 
-    extern "C" fn rax_free_hook(ptr: *mut libc::c_void) {
+    extern "C" fn rax_free_hook(ptr: *mut u8) {
         unsafe {
             println!("free");
-            libc::free(ptr)
+            libc::free(ptr as *mut libc::c_void)
         }
     }
 
@@ -2114,7 +2166,7 @@ mod tests {
                 let sw = Stopwatch::start_new();
 
                 for _po in 0..ops {
-                    r.iter(|_, iter| {
+                    r.iter_mut(|_, iter| {
                         iter.seek(EQUAL, 1601);
                     });
                 }
@@ -2280,7 +2332,7 @@ mod tests {
             let sw = Stopwatch::start_new();
 
             for _po in 0..1000000 {
-                r.iter(|_, iter| {
+                r.iter_mut(|_, iter| {
                     iter.seek(EQUAL, 1601);
                 });
             }
@@ -2383,7 +2435,7 @@ mod tests {
 
         r.show();
 
-        r.iter(|_, iter| {
+        r.iter_mut(|_, iter| {
             if !iter.seek_min() {
                 return;
             }
@@ -2424,7 +2476,7 @@ mod tests {
 
         r.show();
 
-        r.iter(|_, iter| {
+        r.iter_mut(|_, iter| {
 //            for (k, v) in iter {
 //
 //            }
@@ -2500,7 +2552,7 @@ mod tests {
 //            Ok(())
 //        });
 
-        r.seek_min(|_, it| {
+        r.iter(|_, it| {
             for (key, value) in it.rev() {
                 println!("Key Len = {}", key);
                 println!("Data = {}", value.unwrap().0);

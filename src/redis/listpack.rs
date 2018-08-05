@@ -34,10 +34,12 @@
 //! it is more natural to represent them in this way for the way the specification
 //! maps to C code).
 
+use redis::ralloc::*;
 use std;
 use std::alloc::*;
 use std::mem::size_of;
 use std::ptr;
+use std::rc;
 
 pub const EMPTY: &'static [u8] = &[];
 
@@ -59,26 +61,15 @@ pub enum Placement {
     After = 1,
 }
 
-/// listpacks are contiguous chunks of memory. The "Allocator" controls the
-/// behavior and system for allocating, re-allocating, and de-allocating
-/// listpacks. All the write methods within the "raw" module deal with raw
-/// pointers on listpack allocations. It is agnostic to where that allocation
-/// came from and can be used for mmap files as well.
-pub trait Allocator: Sized {
-    fn has_header(&self) -> bool;
-
-    fn alloc(&self, size: usize) -> listpack;
-
-    fn realloc(&self, lp: listpack, size: usize) -> listpack;
-
-    fn dealloc(&self, lp: listpack);
-}
 
 pub struct Listpack(listpack);
 
+unsafe impl Send for Listpack {}
+unsafe impl Sync for Listpack {}
+
 impl Listpack {
     pub fn new() -> Listpack {
-        Listpack(new(ALLOCATOR))
+        unsafe { Listpack(new(ALLOCATOR)) }
     }
 
     #[inline(always)]
@@ -108,12 +99,14 @@ impl Listpack {
         place: Placement,
         target: element,
     ) -> Option<element> {
-        match insert(ALLOCATOR, self.0, v.into(), place, target) {
-            Some((lp, ele)) => {
-                self.0 = lp;
-                Some(ele)
+        unsafe {
+            match insert(ALLOCATOR, self.0, v.into(), place, target) {
+                Some((lp, ele)) => {
+                    self.0 = lp;
+                    Some(ele)
+                }
+                None => None
             }
-            None => None
         }
     }
 
@@ -143,12 +136,14 @@ impl Listpack {
     ) -> Option<element>
         where
             T: Int {
-        match insert_signed_int(ALLOCATOR, self.0, v, place, target) {
-            Some((lp, ele)) => {
-                self.0 = lp;
-                Some(ele)
+        unsafe {
+            match insert_signed_int(ALLOCATOR, self.0, v, place, target) {
+                Some((lp, ele)) => {
+                    self.0 = lp;
+                    Some(ele)
+                }
+                None => None
             }
-            None => None
         }
     }
 
@@ -161,12 +156,14 @@ impl Listpack {
     ) -> Option<element>
         where
             T: Str {
-        match insert_string(ALLOCATOR, self.0, v, place, target) {
-            Some((lp, ele)) => {
-                self.0 = lp;
-                Some(ele)
+        unsafe {
+            match insert_string(ALLOCATOR, self.0, v, place, target) {
+                Some((lp, ele)) => {
+                    self.0 = lp;
+                    Some(ele)
+                }
+                None => None
             }
-            None => None
         }
     }
 
@@ -176,12 +173,14 @@ impl Listpack {
         p: element,
         v: V,
     ) -> Option<element> {
-        match replace(ALLOCATOR, self.0, p, v.into()) {
-            Some((lp, ele)) => {
-                self.0 = lp;
-                Some(ele)
+        unsafe {
+            match replace(ALLOCATOR, self.0, p, v.into()) {
+                Some((lp, ele)) => {
+                    self.0 = lp;
+                    Some(ele)
+                }
+                None => None
             }
-            None => None
         }
     }
 
@@ -193,12 +192,14 @@ impl Listpack {
     ) -> Option<element>
         where
             T: Int {
-        match replace_signed_int(ALLOCATOR, self.0, p, v) {
-            Some((lp, ele)) => {
-                self.0 = lp;
-                Some(ele)
+        unsafe {
+            match replace_signed_int(ALLOCATOR, self.0, p, v) {
+                Some((lp, ele)) => {
+                    self.0 = lp;
+                    Some(ele)
+                }
+                None => None
             }
-            None => None
         }
     }
 
@@ -210,12 +211,14 @@ impl Listpack {
     ) -> Option<element>
         where
             T: Str {
-        match replace_string(ALLOCATOR, self.0, p, v) {
-            Some((lp, ele)) => {
-                self.0 = lp;
-                Some(ele)
+        unsafe {
+            match replace_string(ALLOCATOR, self.0, p, v) {
+                Some((lp, ele)) => {
+                    self.0 = lp;
+                    Some(ele)
+                }
+                None => None
             }
-            None => None
         }
     }
 
@@ -224,12 +227,14 @@ impl Listpack {
         &mut self,
         v: V,
     ) -> bool {
-        match append(ALLOCATOR, self.0, v.into()) {
-            Some(lp) => {
-                self.0 = lp;
-                true
+        unsafe {
+            match append(ALLOCATOR, self.0, v.into()) {
+                Some(lp) => {
+                    self.0 = lp;
+                    true
+                }
+                None => false
             }
-            None => false
         }
     }
 
@@ -238,12 +243,14 @@ impl Listpack {
         &mut self,
         v: T,
     ) -> bool {
-        match append_val(ALLOCATOR, self.0, v.as_ref()) {
-            (vv, Some(lp)) => {
-                self.0 = lp;
-                true
+        unsafe {
+            match append_val(ALLOCATOR, self.0, v.as_ref()) {
+                (vv, Some(lp)) => {
+                    self.0 = lp;
+                    true
+                }
+                (vv, None) => false
             }
-            (vv, None) => false
         }
     }
 
@@ -252,12 +259,14 @@ impl Listpack {
         &mut self,
         v: &'b Value,
     ) -> (&'b Value, bool) {
-        match append_val(ALLOCATOR, self.0, v) {
-            (vv, Some(lp)) => {
-                self.0 = lp;
-                (vv, true)
+        unsafe {
+            match append_val(ALLOCATOR, self.0, v) {
+                (vv, Some(lp)) => {
+                    self.0 = lp;
+                    (vv, true)
+                }
+                (vv, None) => (vv, false)
             }
-            (vv, None) => (vv, false)
         }
     }
 
@@ -268,12 +277,14 @@ impl Listpack {
     ) -> bool
         where
             T: Int {
-        match append_signed_int(ALLOCATOR, self.0, v) {
-            Some(lp) => {
-                self.0 = lp;
-                true
+        unsafe {
+            match append_signed_int(ALLOCATOR, self.0, v) {
+                Some(lp) => {
+                    self.0 = lp;
+                    true
+                }
+                None => false
             }
-            None => false
         }
     }
 
@@ -284,12 +295,14 @@ impl Listpack {
     ) -> bool
         where
             T: Str {
-        match append_string(ALLOCATOR, self.0, v) {
-            Some(lp) => {
-                self.0 = lp;
-                true
+        unsafe {
+            match append_string(ALLOCATOR, self.0, v) {
+                Some(lp) => {
+                    self.0 = lp;
+                    true
+                }
+                None => false
             }
-            None => false
         }
     }
 
@@ -298,12 +311,14 @@ impl Listpack {
         &mut self,
         p: element,
     ) -> Option<element> {
-        match delete(ALLOCATOR, self.0, p) {
-            Some((lp, ele)) => {
-                self.0 = lp;
-                Some(ele)
+        unsafe {
+            match delete(ALLOCATOR, self.0, p) {
+                Some((lp, ele)) => {
+                    self.0 = lp;
+                    Some(ele)
+                }
+                None => None
             }
-            None => None
         }
     }
 
@@ -449,7 +464,10 @@ impl Listpack {
 
 impl Drop for Listpack {
     fn drop(&mut self) {
-        ALLOCATOR.dealloc(self.0);
+        println!("dropped Listpack");
+//        if !self.0.is_null() {
+        unsafe { ALLOCATOR.dealloc(self.0); }
+//        }
     }
 }
 
@@ -786,7 +804,7 @@ pub fn decode_backlen(mut buf: *mut u8) -> u64 {
 #[inline(always)]
 pub fn is_valid_element(lp: listpack, ele: element, len: usize) -> bool {
     if lp.is_null() || ele.is_null() {
-        return false
+        return false;
     }
 
     let lp_uintptr = lp as usize;
@@ -1464,122 +1482,6 @@ pub fn seek(lp: listpack, mut index: isize) -> Option<element> {
     }
 }
 
-//===----------------------------------------------------------------------===//
-// Allocator
-//===----------------------------------------------------------------------===//
-
-/// Default listpack allocator that uses the system allocator.
-pub struct DefaultAllocator;
-
-///
-pub const ALLOCATOR: &'static DefaultAllocator = &DefaultAllocator;
-
-///
-impl Allocator for DefaultAllocator {
-    #[inline(always)]
-    fn has_header(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn alloc(&self, size: usize) -> *mut u8 {
-        use std::mem;
-        use std::alloc;
-        unsafe {
-            alloc::alloc(
-                Layout::from_size_align_unchecked(
-                    size,
-                    mem::size_of::<usize>(),
-                )
-            )
-        }
-    }
-
-    #[inline(always)]
-    fn realloc(&self, lp: *mut u8, newsize: usize) -> *mut u8 {
-        use std::mem;
-        use std::alloc;
-        unsafe {
-            alloc::realloc(
-                lp,
-                Layout::from_size_align_unchecked(
-                    get_total_bytes(lp) as usize,
-                    mem::size_of::<usize>(),
-                ),
-                newsize,
-            )
-        }
-    }
-
-    #[inline(always)]
-    fn dealloc(&self, lp: *mut u8) {
-        use std::mem;
-        use std::alloc;
-        unsafe {
-            alloc::dealloc(
-                lp,
-                Layout::from_size_align_unchecked(
-                    get_total_bytes(lp) as usize,
-                    mem::size_of::<usize>(),
-                ),
-            )
-        }
-    }
-}
-
-///
-impl<'a> Allocator for &'a DefaultAllocator {
-    #[inline(always)]
-    fn has_header(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn alloc(&self, size: usize) -> *mut u8 {
-        use std::mem;
-        use std::alloc;
-        unsafe {
-            alloc::alloc(
-                Layout::from_size_align_unchecked(
-                    size,
-                    mem::size_of::<usize>(),
-                )
-            )
-        }
-    }
-
-    #[inline(always)]
-    fn realloc(&self, lp: *mut u8, newsize: usize) -> *mut u8 {
-        use std::mem;
-        use std::alloc;
-        unsafe {
-            alloc::realloc(
-                lp,
-                Layout::from_size_align_unchecked(
-                    get_total_bytes(lp) as usize,
-                    mem::size_of::<usize>(),
-                ),
-                newsize,
-            )
-        }
-    }
-
-    #[inline(always)]
-    fn dealloc(&self, lp: *mut u8) {
-        use std::mem;
-        use std::alloc;
-        unsafe {
-            alloc::dealloc(
-                lp,
-                Layout::from_size_align_unchecked(
-                    get_total_bytes(lp) as usize,
-                    mem::size_of::<usize>(),
-                ),
-            )
-        }
-    }
-}
-
 ///
 #[inline]
 pub fn new<'a, A>(allocator: &'a A) -> listpack where A: Allocator {
@@ -1604,7 +1506,7 @@ pub fn insert<'a, A>(
     mut lp: listpack,
     v: Value,
     place: Placement,
-    target: element
+    target: element,
 ) -> Option<(listpack, element)>
     where A: Allocator {
     unsafe {
@@ -1713,7 +1615,7 @@ pub fn insert_int<'a, A, I>(
     mut lp: listpack,
     v: I,
     place: Placement,
-    target: element
+    target: element,
 ) -> Option<(listpack, element)>
     where
         A: Allocator,
@@ -1728,7 +1630,7 @@ pub fn insert_signed_int<'a, A, I>(
     mut lp: listpack,
     v: I,
     place: Placement,
-    target: element
+    target: element,
 ) -> Option<(listpack, element)>
     where
         A: Allocator,
@@ -1743,7 +1645,7 @@ pub fn insert_string<'a, A, S>(
     mut lp: listpack,
     mut v: S,
     place: Placement,
-    target: element
+    target: element,
 ) -> Option<(listpack, element)>
     where
         A: Allocator,
@@ -1762,7 +1664,7 @@ pub fn replace<'a, A>(
     allocator: &'a A,
     mut lp: listpack,
     mut p: element,
-    v: Value
+    v: Value,
 ) -> Option<(listpack, element)>
     where A: Allocator {
     unsafe {
@@ -1914,7 +1816,7 @@ pub fn replace_int<'a, A, I>(
     allocator: &'a A,
     mut lp: listpack,
     mut p: element,
-    mut v: I
+    mut v: I,
 ) -> Option<(listpack, element)>
     where
         A: Allocator,
@@ -1928,7 +1830,7 @@ pub fn replace_signed_int<'a, A, I>(
     allocator: &'a A,
     mut lp: listpack,
     mut p: element,
-    mut v: I
+    mut v: I,
 ) -> Option<(listpack, element)>
     where
         A: Allocator,
@@ -1942,7 +1844,7 @@ pub fn replace_string<'a, A, S>(
     allocator: &'a A,
     mut lp: listpack,
     mut p: element,
-    mut v: S
+    mut v: S,
 ) -> Option<(listpack, element)>
     where
         A: Allocator,
@@ -1960,7 +1862,7 @@ pub fn replace_string<'a, A, S>(
 pub fn append<'a, A>(
     allocator: &'a A,
     mut lp: listpack,
-    v: Value
+    v: Value,
 ) -> Option<listpack>
     where A: Allocator {
     unsafe {
@@ -1990,14 +1892,12 @@ pub fn append<'a, A>(
         // Write EOF
         *lp.offset(new_listpack_bytes as isize - 1) = EOF;
 
-        if allocator.has_header() {
-            // Update header
-            let num_elements = get_num_elements(lp);
-            if num_elements != HDR_NUMELE_UNKNOWN {
-                set_num_elements(lp, num_elements + 1);
-            }
-            set_total_bytes(lp, new_listpack_bytes);
+        // Update header
+        let num_elements = get_num_elements(lp);
+        if num_elements != HDR_NUMELE_UNKNOWN {
+            set_num_elements(lp, num_elements + 1);
         }
+        set_total_bytes(lp, new_listpack_bytes);
 
         Some(lp)
     }
@@ -2008,7 +1908,7 @@ pub fn append<'a, A>(
 pub fn append_val<'a, 'b, A>(
     allocator: &'a A,
     mut lp: listpack,
-    v: &'b Value
+    v: &'b Value,
 ) -> (&'b Value, Option<listpack>)
     where A: Allocator {
     unsafe {
@@ -2018,13 +1918,13 @@ pub fn append_val<'a, 'b, A>(
         let old_listpack_bytes = get_total_bytes(lp);
         let new_listpack_bytes = old_listpack_bytes + encoded_size;
         if new_listpack_bytes > u32::max_value() {
-            return (v, None)
+            return (v, None);
         }
 
         // realloc to make room
         lp = allocator.realloc(lp, new_listpack_bytes as usize);
         if lp.is_null() {
-            return (v, None)
+            return (v, None);
         }
 
         // Locate EOF marker.
@@ -2038,14 +1938,12 @@ pub fn append_val<'a, 'b, A>(
         // Write EOF
         *lp.offset(new_listpack_bytes as isize - 1) = EOF;
 
-        if allocator.has_header() {
-            // Update header
-            let num_elements = get_num_elements(lp);
-            if num_elements != HDR_NUMELE_UNKNOWN {
-                set_num_elements(lp, num_elements + 1);
-            }
-            set_total_bytes(lp, new_listpack_bytes);
+        // Update header
+        let num_elements = get_num_elements(lp);
+        if num_elements != HDR_NUMELE_UNKNOWN {
+            set_num_elements(lp, num_elements + 1);
         }
+        set_total_bytes(lp, new_listpack_bytes);
 
         (v, Some(lp))
     }
@@ -2056,7 +1954,7 @@ pub fn append_val<'a, 'b, A>(
 pub fn append_int<'a, A, I>(
     allocator: &'a A,
     mut lp: listpack,
-    v: I
+    v: I,
 ) -> Option<listpack>
     where A: Allocator, I: Int {
     append(allocator, lp, Value::Int(v.to_int64()))
@@ -2069,7 +1967,7 @@ pub fn append_int<'a, A, I>(
 pub fn append_signed_int<'a, A, I>(
     allocator: &'a A,
     mut lp: listpack,
-    v: I
+    v: I,
 ) -> Option<listpack>
     where A: Allocator, I: Int {
     append(allocator, lp, Value::Int(zigzag(v.to_int64())))
@@ -2080,7 +1978,7 @@ pub fn append_signed_int<'a, A, I>(
 pub fn append_string<'a, A, S>(
     allocator: &'a A,
     mut lp: listpack,
-    mut v: S
+    mut v: S,
 ) -> Option<listpack>
     where A: Allocator, S: Str {
     append(allocator, lp, v.as_value())
@@ -2095,7 +1993,7 @@ pub fn append_string<'a, A, S>(
 pub fn delete<'a, A>(
     allocator: &'a A,
     mut lp: listpack,
-    p: element
+    p: element,
 ) -> Option<(listpack, element)>
     where A: Allocator {
     unsafe {
@@ -2108,7 +2006,7 @@ pub fn delete<'a, A>(
             None => {
                 let old_listpack_bytes = get_total_bytes(lp);
                 if old_listpack_bytes == (HDR_USIZE as u32) + 1 {
-                    return None
+                    return None;
                 }
 
                 let new_listpack_bytes = old_listpack_bytes - encoded_size - backlen_size;
@@ -2118,14 +2016,14 @@ pub fn delete<'a, A>(
                 return Some((
                     lp,
                     last(lp).unwrap_or(std::ptr::null_mut())
-                ))
+                ));
             }
         };
 
         let p_ptr = p as usize;
         let lp_ptr = lp as usize;
         if p_ptr < lp_ptr {
-            return None
+            return None;
         }
 
         let poff = p_ptr - lp_ptr;
@@ -2577,6 +2475,7 @@ impl_str_as_ptr!(&'a str);
 #[cfg(test)]
 mod tests {
     use redis::listpack::*;
+    use redis::ralloc::*;
     use std;
 
     #[test]

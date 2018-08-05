@@ -19,10 +19,12 @@ const SDS_TYPE_BITS: libc::c_int = 3;
 
 pub type Sds = *mut libc::c_char;
 
-
 #[derive(Eq, Debug)]
 #[repr(C)]
 pub struct SDS(pub Sds);
+
+unsafe impl Send for SDS {}
+unsafe impl Sync for SDS {}
 
 impl Clone for SDS {
     fn clone(&self) -> Self {

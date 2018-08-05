@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+extern void* (*redis_malloc)(size_t);
+extern void* (*redis_realloc)(void*,size_t);
+extern void (*redis_free)(void*);
+
 /* ---------------- Defines common between core and modules --------------- */
 
 /* Error status return values. */
@@ -170,17 +174,9 @@ typedef struct RedisModuleTypeMethods {
 
 #define REDISMODULE_API_FUNC(x) (*x)
 
-//void *zmalloc(size_t size);
-//void *zcalloc(size_t size);
-//void *zrealloc(void *ptr, size_t size);
-//void zfree(void *ptr);
-
-//void *REDISMODULE_API_FUNC(zmalloc)(size_t bytes);
 void *REDISMODULE_API_FUNC(RedisModule_Alloc)(size_t bytes);
 void *REDISMODULE_API_FUNC(RedisModule_Realloc)(void *ptr, size_t bytes);
-//void *REDISMODULE_API_FUNC(zrealloc)(void *ptr, size_t bytes);
 void REDISMODULE_API_FUNC(RedisModule_Free)(void *ptr);
-//void REDISMODULE_API_FUNC(zfree)(void *ptr);
 void *REDISMODULE_API_FUNC(RedisModule_Calloc)(size_t nmemb, size_t size);
 char *REDISMODULE_API_FUNC(RedisModule_Strdup)(const char *str);
 int REDISMODULE_API_FUNC(RedisModule_GetApi)(const char *, void *);
@@ -324,11 +320,6 @@ static int RedisModule_Init(RedisModuleCtx *ctx, const char *name, int ver, int 
 static int RedisModule_Init(RedisModuleCtx *ctx, const char *name, int ver, int apiver) {
     void *getapifuncptr = ((void**)ctx)[0];
     RedisModule_GetApi = (int (*)(const char *, void *)) (unsigned long)getapifuncptr;
-//    REDISMODULE_GET_API(lpNew);
-//    REDISMODULE_GET_API(lpFree);
-//    REDISMODULE_GET_API(lpLength);
-//    REDISMODULE_GET_API(raxNew);
-//    REDISMODULE_GET_API(raxFree);
     REDISMODULE_GET_API(Alloc);
     REDISMODULE_GET_API(Calloc);
     REDISMODULE_GET_API(Free);

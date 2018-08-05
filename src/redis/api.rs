@@ -370,6 +370,7 @@ pub fn init(
 /// Return non-zero if a module command, that was declared with the
 /// flag "getkeys-api", is called in a special way to get the keys positions
 /// and not to get executed. Otherwise zero is returned.
+#[inline(always)]
 pub fn is_keys_position_request(ctx: *mut RedisModuleCtx) -> bool {
     unsafe { RedisModule_IsKeysPositionRequest(ctx) != 0 }
 }
@@ -388,6 +389,7 @@ pub fn is_keys_position_request(ctx: *mut RedisModuleCtx) -> bool {
 ///  Note: in the example below the get keys API would not be needed since
 ///  keys are at fixed positions. This interface is only used for commands
 ///  with a more complex structure.
+#[inline(always)]
 pub fn key_at_pos(ctx: *mut RedisModuleCtx, pos: libc::c_int) {
     unsafe { RedisModule_KeyAtPos(ctx, pos) }
 }
@@ -395,6 +397,7 @@ pub fn key_at_pos(ctx: *mut RedisModuleCtx, pos: libc::c_int) {
 ///
 /// RedisModule_CallReplyType
 ///
+#[inline(always)]
 pub fn call_reply_type(reply: *mut RedisModuleCallReply) -> ReplyType {
     unsafe { RedisModule_CallReplyType(reply) }
 }
@@ -402,6 +405,7 @@ pub fn call_reply_type(reply: *mut RedisModuleCallReply) -> ReplyType {
 ///
 /// RedisModule_FreeCallReply
 ///
+#[inline(always)]
 pub fn free_call_reply(reply: *mut RedisModuleCallReply) {
     unsafe { RedisModule_FreeCallReply(reply); }
 }
@@ -409,6 +413,7 @@ pub fn free_call_reply(reply: *mut RedisModuleCallReply) {
 ///
 /// RedisModule_CallReplyInteger
 ///
+#[inline(always)]
 pub fn call_reply_integer(reply: *mut RedisModuleCallReply) -> libc::c_longlong {
     unsafe { RedisModule_CallReplyInteger(reply) }
 }
@@ -416,6 +421,7 @@ pub fn call_reply_integer(reply: *mut RedisModuleCallReply) -> libc::c_longlong 
 ///
 /// RedisModule_CallReplyStringPtr
 ///
+#[inline(always)]
 pub fn call_reply_string_ptr(
     str: *mut RedisModuleCallReply,
     len: *mut libc::size_t,
@@ -475,6 +481,7 @@ pub fn call_reply_string_ptr(
 ///                     example, is unable to report the position of the
 ///                     keys, programmatically creates key names, or any
 ///                     other reason.
+#[inline(always)]
 pub fn create_command(
     ctx: *mut RedisModuleCtx,
     name: *const u8,
@@ -499,11 +506,13 @@ pub fn create_command(
 
 /// Return non-zero if the module name is busy.
 /// Otherwise zero is returned.
+#[inline(always)]
 pub fn is_module_name_busy(name: *const u8) -> bool {
     unsafe { RedisModule_IsModuleNameBusy(name) != 0 }
 }
 
 /// Return the current UNIX time in milliseconds.
+#[inline(always)]
 pub fn milliseconds() -> libc::c_longlong {
     unsafe { RedisModule_Milliseconds() }
 }
@@ -519,6 +528,7 @@ pub fn milliseconds() -> libc::c_longlong {
 ///
 /// The string is created by copying the `len` bytes starting
 /// at `ptr`. No reference is retained to the passed buffer.
+#[inline(always)]
 pub fn create_string(
     ctx: *mut RedisModuleCtx,
     ptr: *const u8,
@@ -532,6 +542,7 @@ pub fn create_string(
 ///
 /// The returned string must be released with RedisModule_FreeString() or by
 /// enabling automatic memory management.
+#[inline(always)]
 pub fn create_string_from_long_long(
     ctx: *mut RedisModuleCtx,
     ll: libc::c_longlong) -> *mut RedisModuleString {
@@ -543,6 +554,7 @@ pub fn create_string_from_long_long(
 ///
 /// The returned string must be released with RedisModule_FreeString() or by
 /// enabling automatic memory management.
+#[inline(always)]
 pub fn create_string_from_string(
     ctx: *mut RedisModuleCtx,
     sstr: *mut RedisModuleString) -> *mut RedisModuleString {
@@ -571,6 +583,7 @@ pub fn create_string_from_string(
 /// any call to RetainString() since creating a string will always result
 /// into a string that lives after the callback function returns, if
 /// no FreeString() call is performed.
+#[inline(always)]
 pub fn retain_string(ctx: *mut RedisModuleCtx, sstr: *mut RedisModuleString) {
     unsafe { RedisModule_RetainString(ctx, sstr) }
 }
@@ -581,6 +594,7 @@ pub fn retain_string(ctx: *mut RedisModuleCtx, sstr: *mut RedisModuleString) {
 /// It is possible to call this function even when automatic memory management
 /// is enabled. In that case the string will be released ASAP and removed
 /// from the pool of string to release at the end.
+#[inline(always)]
 pub fn free_string(ctx: *mut RedisModuleCtx, str: *mut RedisModuleString) {
     unsafe { RedisModule_FreeString(ctx, str) }
 }
@@ -588,6 +602,7 @@ pub fn free_string(ctx: *mut RedisModuleCtx, str: *mut RedisModuleString) {
 /// Given a string module object, this function returns the string pointer
 /// and length of the string. The returned pointer and length should only
 /// be used for read only accesses and never modified.
+#[inline(always)]
 pub fn string_ptr_len(str: *mut RedisModuleString,
                       len: *mut libc::size_t) -> *const u8 {
     unsafe { RedisModule_StringPtrLen(str, len) }
@@ -602,6 +617,7 @@ pub fn string_ptr_len(str: *mut RedisModuleString,
 /// Returns REDISMODULE_OK on success. If the string can't be parsed
 /// as a valid, strict long long (no spaces before/after), REDISMODULE_ERR
 /// is returned.
+#[inline(always)]
 pub fn string_to_long_long(str: *mut RedisModuleString,
                            ll: *mut libc::c_longlong) -> Status {
     unsafe { RedisModule_StringToLongLong(str, ll) }
@@ -610,6 +626,7 @@ pub fn string_to_long_long(str: *mut RedisModuleString,
 /// Convert the string into a double, storing it at `*d`.
 /// Returns REDISMODULE_OK on success or REDISMODULE_ERR if the string is
 /// not a valid string representation of a double value.
+#[inline(always)]
 pub fn string_to_double(str: *mut RedisModuleString,
                         d: *mut libc::c_double) -> Status {
     unsafe { RedisModule_StringToDouble(str, d) }
@@ -618,6 +635,7 @@ pub fn string_to_double(str: *mut RedisModuleString,
 /// Compare two string objects, returning -1, 0 or 1 respectively if
 /// a < b, a == b, a > b. Strings are compared byte by byte as two
 /// binary blobs without any encoding care / collation attempt.
+#[inline(always)]
 pub fn string_compare(a: *mut RedisModuleString,
                       b: *mut RedisModuleString) -> libc::c_int {
     unsafe { RedisModule_StringCompare(a, b) }
@@ -626,6 +644,7 @@ pub fn string_compare(a: *mut RedisModuleString,
 /// Append the specified buffere to the string 'str'. The string must be a
 /// string created by the user that is referenced only a single time, otherwise
 /// REDISMODULE_ERR is returend and the operation is not performed.
+#[inline(always)]
 pub fn string_append_buffer(ctx: *mut RedisModuleCtx,
                             str: *mut RedisModuleString,
                             buf: *const u8,
@@ -633,7 +652,7 @@ pub fn string_append_buffer(ctx: *mut RedisModuleCtx,
     unsafe { RedisModule_StringAppendBuffer(ctx, str, buf, len) }
 }
 
-
+#[inline(always)]
 pub fn log(ctx: *mut RedisModuleCtx, level: *const u8, fmt: *const u8) {
     unsafe { RedisModule_Log(ctx, level, fmt) }
 }
@@ -655,6 +674,7 @@ pub fn log(ctx: *mut RedisModuleCtx, level: *const u8, fmt: *const u8) {
 /// Example:
 ///
 ///     if (argc != 3) return RedisModule_WrongArity(ctx);
+#[inline(always)]
 pub fn wrong_arity(ctx: *mut RedisModuleCtx) -> Status {
     unsafe { RedisModule_WrongArity(ctx) }
 }
@@ -670,6 +690,7 @@ pub fn wrong_arity(ctx: *mut RedisModuleCtx) -> Status {
 /// latest "open" count if there are multiple ones).
 ///
 /// The function always returns REDISMODULE_OK.
+#[inline(always)]
 pub fn reply_with_array(ctx: *mut RedisModuleCtx,
                         len: libc::c_long) -> Status {
     unsafe { RedisModule_ReplyWithArray(ctx, len) }
@@ -688,6 +709,7 @@ pub fn reply_with_array(ctx: *mut RedisModuleCtx,
 ///     RedisModule_ReplyWithError(ctx,"Wrong Type");
 ///
 /// The function always returns REDISMODULE_OK.
+#[inline(always)]
 pub fn reply_with_error(ctx: *mut RedisModuleCtx,
                         err: *const u8) {
     unsafe { RedisModule_ReplyWithError(ctx, err) }
@@ -695,6 +717,7 @@ pub fn reply_with_error(ctx: *mut RedisModuleCtx,
 
 /// Send an integer reply to the client, with the specified long long value.
 /// The function always returns REDISMODULE_OK.
+#[inline(always)]
 pub fn reply_with_long_long(ctx: *mut RedisModuleCtx,
                             ll: libc::c_longlong) -> Status {
     unsafe { RedisModule_ReplyWithLongLong(ctx, ll) }
@@ -719,6 +742,7 @@ pub fn reply_with_long_long(ctx: *mut RedisModuleCtx,
 /// length, since we produce a fixed number of elements, but in the practice
 /// the code may use an interator or other ways of creating the output so
 /// that is not easy to calculate in advance the number of elements.
+#[inline(always)]
 pub fn reply_set_array_length(ctx: *mut RedisModuleCtx, len: libc::c_long) {
     unsafe { RedisModule_ReplySetArrayLength(ctx, len) }
 }
@@ -726,6 +750,7 @@ pub fn reply_set_array_length(ctx: *mut RedisModuleCtx, len: libc::c_long) {
 /// Reply with a bulk string, taking in input a C buffer pointer and length.
 ///
 /// The function always returns REDISMODULE_OK.
+#[inline(always)]
 pub fn reply_with_string_buffer(ctx: *mut RedisModuleCtx,
                                 buf: *const u8,
                                 len: libc::size_t) -> Status {
@@ -761,6 +786,7 @@ pub fn reply_with_null(
 /// same reply we obtained by the command.
 ///
 /// The function always returns REDISMODULE_OK.
+#[inline(always)]
 pub fn reply_with_call_reply(
     ctx: *mut RedisModuleCtx,
     reply: *mut RedisModuleCallReply,
@@ -772,6 +798,7 @@ pub fn reply_with_call_reply(
 /// Reply with a bulk string, taking in input a RedisModuleString object.
 ///
 /// The function always returns REDISMODULE_OK.
+#[inline(always)]
 pub fn reply_with_double(
     ctx: *mut RedisModuleCtx,
     d: libc::c_double,
@@ -803,14 +830,16 @@ pub fn reply_with_double(
 ///
 /// The command returns REDISMODULE_ERR if the format specifiers are invalid
 /// or the command name does not belong to a known command.
+#[inline(always)]
 pub fn replicate(
-    ctx: *mut ::redis::api::RedisModuleCtx,
+    ctx: *mut RedisModuleCtx,
     cmdname: *const u8,
     fmt: *const u8,
 ) -> Status {
     unsafe { RedisModule_Replicate(ctx, cmdname, fmt) }
 }
 
+#[inline(always)]
 pub fn replicate_verbatim(ctx: *mut RedisModuleCtx) -> Status {
     unsafe { RedisModule_ReplicateVerbatim(ctx) }
 }
@@ -832,11 +861,13 @@ pub fn replicate_verbatim(ctx: *mut RedisModuleCtx) -> Status {
 /// Valid IDs are from 1 to 2^64-1. If 0 is returned it means there is no way
 /// to fetch the ID in the context the function was currently called.
 ///
+#[inline(always)]
 pub fn get_client_id(ctx: *mut RedisModuleCtx) -> libc::c_longlong {
     unsafe { RedisModule_GetClientId(ctx) }
 }
 
 /// Return the currently selected DB.
+#[inline(always)]
 pub fn get_selected_db(ctx: *mut RedisModuleCtx) -> libc::c_int {
     unsafe { RedisModule_GetSelectedDb(ctx) }
 }
@@ -873,6 +904,7 @@ pub fn get_selected_db(ctx: *mut RedisModuleCtx) -> libc::c_int {
 ///
 ///  * REDISMODULE_CTX_FLAGS_OOM_WARNING: Less than 25% of memory remains before
 ///                                       reaching the maxmemory level.
+#[inline(always)]
 pub fn get_context_flags(ctx: *mut RedisModuleCtx) -> libc::c_int {
     unsafe { RedisModule_GetContextFlags(ctx) }
 }
@@ -887,6 +919,7 @@ pub fn get_context_flags(ctx: *mut RedisModuleCtx) -> libc::c_int {
 /// If the module command wishes to change something in a different DB and
 /// returns back to the original one, it should call RedisModule_GetSelectedDb()
 /// before in order to restore the old DB number before returning.
+#[inline(always)]
 pub fn select_db(ctx: *mut RedisModuleCtx, newid: libc::c_int) -> libc::c_int {
     unsafe { RedisModule_SelectDb(ctx, newid) }
 }
@@ -905,6 +938,7 @@ pub fn select_db(ctx: *mut RedisModuleCtx, newid: libc::c_int) -> libc::c_int {
 /// key does not exist, NULL is returned. However it is still safe to
 /// call RedisModule_CloseKey() and RedisModule_KeyType() on a NULL
 /// value.
+#[inline(always)]
 pub fn open_key(
     ctx: *mut RedisModuleCtx,
     keyname: *mut RedisModuleString,
@@ -914,12 +948,14 @@ pub fn open_key(
 }
 
 /// Close a key handle.
+#[inline(always)]
 pub fn close_key(kp: *mut RedisModuleKey) {
     unsafe { RedisModule_CloseKey(kp) }
 }
 
 /// Return the type of the key. If the key pointer is NULL then
 /// REDISMODULE_KEYTYPE_EMPTY is returned.
+#[inline(always)]
 pub fn key_type(kp: *mut RedisModuleKey) -> KeyType {
     unsafe { RedisModule_KeyType(kp) }
 }
@@ -929,6 +965,7 @@ pub fn key_type(kp: *mut RedisModuleKey) -> KeyType {
 /// is the number of elements (just counting keys for hashes).
 ///
 /// If the key pointer is NULL or the key is empty, zero is returned.
+#[inline(always)]
 pub fn value_length(kp: *mut RedisModuleKey) -> libc::size_t {
     unsafe { RedisModule_ValueLength(kp) }
 }
@@ -937,6 +974,7 @@ pub fn value_length(kp: *mut RedisModuleKey) -> libc::size_t {
 /// accept new writes as an empty key (that will be created on demand).
 /// On success REDISMODULE_OK is returned. If the key is not open for
 /// writing REDISMODULE_ERR is returned.
+#[inline(always)]
 pub fn delete_key(kp: *mut RedisModuleKey) -> Status {
     unsafe { RedisModule_DeleteKey(kp) }
 }
@@ -946,6 +984,7 @@ pub fn delete_key(kp: *mut RedisModuleKey) -> Status {
 /// accept new writes as an empty key (that will be created on demand).
 /// On success REDISMODULE_OK is returned. If the key is not open for
 /// writing REDISMODULE_ERR is returned.
+#[inline(always)]
 pub fn unlink_key(kp: *mut RedisModuleKey) -> Status {
     unsafe { RedisModule_UnlinkKey(kp) }
 }
@@ -966,6 +1005,7 @@ pub fn get_expire(key: *mut RedisModuleKey) -> libc::c_longlong {
 ///
 /// The function returns REDISMODULE_OK on success or REDISMODULE_ERR if
 /// the key was not open for writing or is an empty key.
+#[inline(always)]
 pub fn set_expire(key: *mut RedisModuleKey,
                   expire: libc::c_longlong) -> Status {
     unsafe { RedisModule_SetExpire(key, expire) }
@@ -979,6 +1019,7 @@ pub fn set_expire(key: *mut RedisModuleKey,
 /// value of the key, deleting the old value if any.
 /// On success REDISMODULE_OK is returned. If the key is not open for
 /// writing or there is an active iterator, REDISMODULE_ERR is returned.
+#[inline(always)]
 pub fn string_set(key: *mut RedisModuleKey,
                   str: *mut RedisModuleString) -> Status {
     unsafe { RedisModule_StringSet(key, str) }
@@ -1012,6 +1053,7 @@ pub fn string_set(key: *mut RedisModuleKey,
 /// byte can be touched (the string is empty, or the key itself is empty)
 /// so a RM_StringTruncate() call should be used if there is to enlarge
 /// the string, and later call StringDMA() again to get the pointer.
+#[inline(always)]
 pub fn string_dma(
     key: *mut RedisModuleKey,
     len: *mut libc::size_t,
@@ -1032,6 +1074,7 @@ pub fn string_dma(
 ///
 /// If the key is empty, a string key is created with the new string value
 /// unless the new length value requested is zero.
+#[inline(always)]
 pub fn string_truncate(key: *mut RedisModuleKey, newlen: libc::size_t) -> Status {
     unsafe { RedisModule_StringTruncate(key, newlen) }
 }
@@ -1045,6 +1088,7 @@ pub fn string_truncate(key: *mut RedisModuleKey, newlen: libc::size_t) -> Status
 /// If the key pointer is about an empty key opened for writing, the key
 /// is created. On error (key opened for read-only operations or of the wrong
 /// type) REDISMODULE_ERR is returned, otherwise REDISMODULE_OK is returned.
+#[inline(always)]
 pub fn list_push(key: *mut RedisModuleKey,
                  wwhere: ListWhere,
                  ele: *mut RedisModuleString) -> Status {
@@ -1058,6 +1102,7 @@ pub fn list_push(key: *mut RedisModuleKey,
 /// 1) The list is empty.
 /// 2) The key was not open for writing.
 /// 3) The key is not a list.
+#[inline(always)]
 pub fn list_pop(key: *mut RedisModuleKey,
                 wwhere: ListWhere) -> *mut RedisModuleString {
     unsafe { RedisModule_ListPop(key, wwhere) }
@@ -1138,6 +1183,7 @@ pub fn list_pop(key: *mut RedisModuleKey,
 ///          BalancedTreeType = RM_CreateDataType(...);
 ///      }
 ///
+#[inline(always)]
 pub fn create_data_type(ctx: *mut RedisModuleCtx,
                         name: *const u8,
                         encver: libc::c_int,
@@ -1205,6 +1251,7 @@ pub fn create_data_type(ctx: *mut RedisModuleCtx,
 ///
 ///     free_privdata:   called in order to free the privata data that is passed
 ///                      by RedisModule_UnblockClient() call.
+#[inline(always)]
 pub fn block_client(ctx: *mut RedisModuleCtx,
                     reply_callback: Option<RedisModuleCmdFunc>,
                     timeout_callback: Option<RedisModuleCmdFunc>,
@@ -1216,6 +1263,7 @@ pub fn block_client(ctx: *mut RedisModuleCtx,
 
 /// Abort a blocked client blocking operation: the client will be unblocked
 /// without firing any callback
+#[inline(always)]
 pub fn abort_block(bc: *mut RedisModuleBlockedClient) -> Status {
     unsafe { RedisModule_AbortBlock(bc) }
 }
@@ -1231,6 +1279,7 @@ pub fn abort_block(bc: *mut RedisModuleBlockedClient) -> Status {
 /// to compute reply or some reply obtained via networking.
 ///
 /// Note: this function can be called from threads spawned by the module. */
+#[inline(always)]
 pub fn unblock_client(bc: *mut RedisModuleBlockedClient, privdata: *mut u8) -> Status {
     unsafe { RedisModule_UnblockClient(bc, privdata as *mut libc::c_void) }
 }
@@ -1250,23 +1299,27 @@ pub fn unblock_client(bc: *mut RedisModuleBlockedClient, privdata: *mut u8) -> S
 /// 2. This callback is not called if the client disconnects because of
 ///    a timeout. In such a case, the client is unblocked automatically
 ///    and the timeout callback is called.
+#[inline(always)]
 pub fn set_disconnect_callback(bc: *mut RedisModuleBlockedClient, callback: Option<RedisModuleDisconnectFunc>) {
     unsafe { RedisModule_SetDisconnectCallback(bc, callback) }
 }
 
 /// Return non-zero if a module command was called in order to fill the
 /// reply for a blocked client.
+#[inline(always)]
 pub fn is_blocked_reply_request(ctx: *mut RedisModuleCtx) -> bool {
     unsafe { RedisModule_IsBlockedReplyRequest(ctx) != 0 }
 }
 
 /// Return non-zero if a module command was called in order to fill the
 /// reply for a blocked client that timed out.
+#[inline(always)]
 pub fn is_blocked_timeout_request(ctx: *mut RedisModuleCtx) -> bool {
     unsafe { RedisModule_IsBlockedTimeoutRequest(ctx) != 0 }
 }
 
 /// Get the privata data set by RedisModule_UnblockClient()
+#[inline(always)]
 pub fn get_blocked_client_private_data(ctx: *mut RedisModuleCtx) -> *mut libc::c_void {
     unsafe { RedisModule_GetBlockedClientPrivateData(ctx) }
 }
@@ -1275,6 +1328,7 @@ pub fn get_blocked_client_private_data(ctx: *mut RedisModuleCtx) -> *mut libc::c
 /// This is useful in the reply and timeout callbacks of blocked clients,
 /// before sometimes the module has the blocked client handle references
 /// around, and wants to cleanup it.
+#[inline(always)]
 pub fn get_blocked_client_handle(ctx: *mut RedisModuleCtx) -> *mut RedisModuleBlockedClient {
     unsafe { RedisModule_GetBlockedClientHandle(ctx) }
 }
@@ -1282,6 +1336,7 @@ pub fn get_blocked_client_handle(ctx: *mut RedisModuleCtx) -> *mut RedisModuleBl
 /// Return true if when the free callback of a blocked client is called,
 /// the reason for the client to be unblocked is that it disconnected
 /// while it was blocked.
+#[inline(always)]
 pub fn is_blocked_client_disconnected(ctx: *mut RedisModuleCtx) -> bool {
     unsafe { RedisModule_BlockedClientDisconnected(ctx) != 0 }
 }
@@ -1309,11 +1364,13 @@ pub fn is_blocked_client_disconnected(ctx: *mut RedisModuleCtx) -> bool {
 ///
 /// TODO: thread safe contexts do not inherit the blocked client
 /// selected database.
+#[inline(always)]
 pub fn get_thread_safe_context(bc: *mut RedisModuleBlockedClient) -> *mut RedisModuleCtx {
     unsafe { RedisModule_GetThreadSafeContext(bc) }
 }
 
 /// Release a thread safe context.
+#[inline(always)]
 pub fn free_thread_safe_context(ctx: *mut RedisModuleCtx) {
     unsafe { RedisModule_FreeThreadSafeContext(ctx) }
 }
@@ -1321,11 +1378,13 @@ pub fn free_thread_safe_context(ctx: *mut RedisModuleCtx) {
 /// Acquire the server lock before executing a thread safe API call.
 /// This is not needed for `RedisModule_Reply*` calls when there is
 /// a blocked client connected to the thread safe context.
+#[inline(always)]
 pub fn thread_safe_context_lock(ctx: *mut RedisModuleCtx) {
     unsafe { RedisModule_ThreadSafeContextLock(ctx) }
 }
 
 /// Release the server lock after a thread safe API call was executed.
+#[inline(always)]
 pub fn thread_safe_context_unlock(ctx: *mut RedisModuleCtx) {
     unsafe { RedisModule_ThreadSafeContextUnlock(ctx) }
 }
@@ -1383,6 +1442,7 @@ pub fn thread_safe_context_unlock(ctx: *mut RedisModuleCtx) {
 /// If you need to take long actions, use threads to offload them.
 ///
 /// See https://redis.io/topics/notifications for more information.
+#[inline(always)]
 pub fn subscribe_to_keyspace_events(ctx: *mut RedisModuleCtx,
                                     types: NotifyFlags,
                                     callback: Option<RedisModuleNotificationFunc>) -> Status {
@@ -1412,6 +1472,7 @@ pub fn subscribe_to_keyspace_events(ctx: *mut RedisModuleCtx,
 /// Create a new timer that will fire after `period` milliseconds, and will call
 /// the specified function using `data` as argument. The returned timer ID can be
 /// used to get information from the timer or to stop it before it fires.
+#[inline(always)]
 pub fn create_timer(ctx: *mut RedisModuleCtx,
                     period: libc::c_longlong,
                     callback: Option<RedisModuleTimerProc>,
@@ -1423,6 +1484,7 @@ pub fn create_timer(ctx: *mut RedisModuleCtx,
 /// calling module, and was stoped, otherwise REDISMODULE_ERR is returned.
 /// If not NULL, the data pointer is set to the value of the data argument when
 /// the timer was created.
+#[inline(always)]
 pub fn stop_timer(ctx: *mut RedisModuleCtx,
                   id: RedisModuleTimerID,
                   data: *mut *mut libc::c_void) -> Status {
@@ -1435,6 +1497,7 @@ pub fn stop_timer(ctx: *mut RedisModuleCtx,
 /// no information is returned and the function returns REDISMODULE_ERR, otherwise
 /// REDISMODULE_OK is returned. The argumnets remaining or data can be NULL if
 /// the caller does not need certain information.
+#[inline(always)]
 pub fn get_timer_info(ctx: *mut RedisModuleCtx,
                       id: RedisModuleTimerID,
                       remaining: libc::uint64_t,
@@ -1450,6 +1513,15 @@ pub fn get_timer_info(ctx: *mut RedisModuleCtx,
 #[allow(non_snake_case)]
 #[link(name = "redismodule", kind = "static")]
 extern "C" {
+    pub static mut redis_malloc:
+    extern "C" fn(size: usize) -> *mut u8;
+
+    pub static mut redis_realloc:
+    extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8;
+
+    pub static mut redis_free:
+    extern "C" fn(ptr: *mut u8);
+
     ///
     /// Taps into the C helper shim
     ///
@@ -1494,14 +1566,13 @@ extern "C" {
     extern "C" fn() -> libc::c_longlong;
 
     pub static Export_RedisModule_Alloc:
-    extern "C" fn(size: libc::size_t) -> *mut libc::c_void;
+    extern "C" fn(size: usize) -> *mut u8;
 
     pub static RedisModule_Alloc:
-    extern "C" fn(size: libc::size_t) -> *mut libc::c_void;
+    extern "C" fn(size: usize) -> *mut u8;
 
     pub static RedisModule_Realloc:
-    extern "C" fn(ptr: *mut u8, size: libc::size_t) -> *mut u8;
-
+    extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8;
 
     pub static RedisModule_Free:
     extern "C" fn(ptr: *mut u8);
