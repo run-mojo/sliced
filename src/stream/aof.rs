@@ -16,7 +16,9 @@ const AOF_GROW_16MB: u64 = 1024 * 1024 * 16;
 const AOF_GROW_32MB: u64 = 1024 * 1024 * 32;
 const AOF_GROW_64MB: u64 = 1024 * 1024 * 64;
 
-/// Memory mapped Append-only file.
+/// Memory mapped Append-only file. This is just a simple generic way
+/// to handle append-only with mmap'ed files where an event-loop writes
+/// directly only if it won't block.
 pub struct AOF {
     inner: Mutex<AOFInner>
 }

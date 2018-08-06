@@ -1,24 +1,18 @@
-use std::path::Path;
-use std::sync::mpsc;
-use std::thread;
-use std::collections::VecDeque;
-
-use spin::Mutex;
-
-use ::alloc::{free, alloc};
-use ::alloc::arc::{Arc, Weak as ArcWeak};
-use ::alloc::rc::{Rc, Weak};
-use ::alloc::raw_vec::RawVec;
-
+use ::alloc::{alloc, free};
 use ::mmap::{Mmap, MmapMut, MmapOptions};
 use ::redis::listpack::Listpack;
 use ::redis::rax::RaxMap;
 use ::redis::sds::SDS;
-
-
-
+use spin::Mutex;
+use std::collections::VecDeque;
+use std::path::Path;
+use std::rc::{Rc, Weak};
+use std::sync::{Arc, Weak as ArcWeak};
+use std::sync::mpsc;
+use std::thread;
 use super::*;
-use super::id::{StreamID, next_id};
+use super::id::{next_id, StreamID};
+
 
 pub const BLOB_LOCATION_FS: u8 = 1;
 pub const BLOB_LOCATION_OBJECT: u8 = 2;
@@ -59,9 +53,10 @@ struct PinFuture {
 }
 
 struct ReadFuture {
-    segment: Rc<SegmentIndex>,
+    segment: Rc<Segment>,
     future: Arc<Box<ReadTask>>,
 }
+
 struct ReadTask {
     mmap: Mmap,
     offset: u32,
@@ -75,8 +70,6 @@ struct ReadTask {
 struct SyncFuture {
     mmap: MmapMut,
 }
-
-
 
 
 struct SegmentLoadTask {
@@ -120,12 +113,8 @@ impl SegmentStore {
                     Ok(task) => {
                         match task {
                             // Create and open a new file.
-                            SegmentTask::Create(ref create) => {
-
-                            }
-                            SegmentTask::Read(ref read) => {
-
-                            }
+                            SegmentTask::Create(ref create) => {}
+                            SegmentTask::Read(ref read) => {}
                             SegmentTask::Sync(ref sync) => {}
                             SegmentTask::Shutdown => {}
                         }
@@ -151,23 +140,15 @@ impl SegmentStore {
         let mut count = 0;
         while let Some(task) = lock.pop_front() {
             match task {
-                SegmentTask::Create(ref create) => {
-
-                }
-                SegmentTask::Read(ref read) => {
-
-                }
-                SegmentTask::Sync(ref sync) => {
-
-                }
-                SegmentTask::Shutdown => {
-
-                }
+                SegmentTask::Create(ref create) => {}
+                SegmentTask::Read(ref read) => {}
+                SegmentTask::Sync(ref sync) => {}
+                SegmentTask::Shutdown => {}
             }
 
             count = count + 1;
             if count == 1024 {
-                break
+                break;
             }
         }
         drop(lock);

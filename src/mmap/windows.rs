@@ -89,6 +89,11 @@ impl MmapInner {
         }
     }
 
+    #[inline]
+    pub fn is_resident(&self, offset: usize, len: usize) -> bool {
+        false
+    }
+
     pub fn map(len: usize, file: &File, offset: usize) -> io::Result<MmapInner> {
         let write = protection_supported(file.as_raw_handle(), PAGE_READWRITE);
         let exec = protection_supported(file.as_raw_handle(), PAGE_EXECUTE_READ);

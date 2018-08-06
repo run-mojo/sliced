@@ -387,6 +387,11 @@ impl Mmap {
         self.inner.make_mut()?;
         Ok(MmapMut { inner: self.inner })
     }
+
+    #[inline]
+    pub fn is_resident(&self, offset: usize, len: usize) -> bool {
+        self.inner.is_resident(offset, len)
+    }
 }
 
 impl Deref for Mmap {
@@ -598,6 +603,11 @@ impl MmapMut {
     pub fn make_exec(mut self) -> Result<Mmap> {
         self.inner.make_exec()?;
         Ok(Mmap { inner: self.inner })
+    }
+
+    #[inline]
+    pub fn is_resident(&self, offset: usize, len: usize) -> bool {
+        self.inner.is_resident(offset, len)
     }
 }
 

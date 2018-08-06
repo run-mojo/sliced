@@ -5,6 +5,8 @@ use libc;
 use std::alloc;
 use std::alloc::{Alloc, AllocErr, Layout};
 use std::error::Error;
+use std::rc::Rc;
+use std::sync::Arc;
 use std::iter;
 use std::mem;
 use std::ptr;
@@ -12,10 +14,10 @@ use std::ptr::NonNull;
 use std::string;
 use time;
 
-pub mod rc;
-pub mod arc;
-pub mod raw_vec;
-pub mod boxed;
+//pub mod rc;
+//pub mod arc;
+//pub mod raw_vec;
+//pub mod boxed;
 
 /// listpacks are contiguous chunks of memory. The "Allocator" controls the
 /// behavior and system for allocating, re-allocating, and de-allocating
@@ -76,7 +78,7 @@ pub fn leak<'a, T>(val: T) -> &'a mut T
 }
 
 #[inline(always)]
-pub fn ref_counted<T>(val: T) -> rc::Rc<T>
+pub fn ref_counted<T>(val: T) -> Rc<T>
     where T: Sized {
     unsafe {
         // Create a heap allocation.
@@ -89,7 +91,25 @@ pub fn ref_counted<T>(val: T) -> rc::Rc<T>
         );
         // Protect against double free.
         mem::forget(val);
-        rc::Rc::from_raw(p as *mut _ as *const T)
+        Rc::from_raw(p as *mut _ as *const T)
+    }
+}
+
+#[inline(always)]
+pub fn atomic_ref_counted<T>(val: T) -> Arc<T>
+    where T: Sized {
+    unsafe {
+        // Create a heap allocation.
+        let p = non_zeroed();
+        // Copy in place.
+        ptr::copy_nonoverlapping(
+            &val as *const _ as *const u8,
+            p as *mut _ as *mut u8,
+            mem::size_of::<T>(),
+        );
+        // Protect against double free.
+        mem::forget(val);
+        Arc::from_raw(p as *mut _ as *const T)
     }
 }
 
@@ -196,11 +216,11 @@ impl Allocator for Rallocator {
 }
 
 
-pub struct RustAllocator;
+pub struct RedisAllocator;
 
-pub const RUST_ALLOCATOR: RustAllocator = RustAllocator;
+pub const REDIS_ALLOCATOR: RedisAllocator = RedisAllocator;
 
-unsafe impl Alloc for RustAllocator {
+unsafe impl Alloc for RedisAllocator {
     #[inline]
     unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
         NonNull::new(alloc(layout.size())).ok_or(AllocErr)
@@ -214,6 +234,23 @@ unsafe impl Alloc for RustAllocator {
     #[inline]
     unsafe fn realloc(&mut self, ptr: NonNull<u8>, layout: Layout, new_size: usize) -> Result<NonNull<u8>, AllocErr> {
         NonNull::new(realloc(ptr.as_ptr(), new_size)).ok_or(AllocErr)
+    }
+}
+
+unsafe impl alloc::GlobalAlloc for RedisAllocator {
+    #[inline]
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        alloc(layout.size())
+    }
+
+    #[inline]
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        dealloc(ptr)
+    }
+
+    #[inline]
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        realloc(ptr, new_size)
     }
 }
 

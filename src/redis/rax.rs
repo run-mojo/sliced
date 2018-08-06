@@ -61,16 +61,14 @@
 #![feature(test)]
 
 
+use ::redis::sds::SDS;
 use libc;
-use nix;
-
 use std;
 use std::error;
 use std::fmt;
 use std::mem::{size_of, transmute};
 use std::ptr;
-
-use ::redis::sds::SDS;
+use std::rc::Rc;
 
 pub const GREATER: &'static str = ">";
 pub const GREATER_EQUAL: &'static str = ">=";
@@ -138,6 +136,12 @@ impl RaxKey for SDS {
     fn from_buf(ptr: *const u8, len: usize) -> SDS {
         SDS::from_buf(ptr, len)
     }
+}
+
+#[inline(always)]
+pub fn is_oom() -> bool {
+    // nix::errno::errno() == libc::ENOMEM
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0) != 0
 }
 
 /// Redis has a beautiful Radix Tree implementation in ANSI C.
@@ -285,7 +289,7 @@ impl<K: RaxKey, V> RaxMap<K, V> {
                 old,
             );
 
-            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+            if r == 0 && is_oom() {
                 Err(RaxError::OutOfMemory())
             } else if old.is_null() {
                 Ok(None)
@@ -328,7 +332,7 @@ impl<K: RaxKey, V> RaxMap<K, V> {
             );
 
             if r == 0 {
-                if nix::errno::errno() == libc::ENOMEM {
+                if is_oom() {
                     Err(RaxError::OutOfMemory())
                 } else {
                     Ok(Some(transmute(value)))
@@ -367,7 +371,7 @@ impl<K: RaxKey, V> RaxMap<K, V> {
         );
 
         if r == 0 {
-            if nix::errno::errno() == libc::ENOMEM {
+            if r == 0 && is_oom() {
                 Err(RaxError::OutOfMemory())
             } else {
                 Ok(Some(transmute(value)))
@@ -411,7 +415,7 @@ impl<K: RaxKey, V> RaxMap<K, V> {
                 old,
             );
 
-            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+            if r == 0 && is_oom() {
                 Err(RaxError::OutOfMemory())
             } else if old.is_null() {
                 Ok(None)
@@ -447,7 +451,7 @@ impl<K: RaxKey, V> RaxMap<K, V> {
             old,
         );
 
-        if r == 0 && nix::errno::errno() == libc::ENOMEM {
+        if r == 0 && is_oom() {
             Err(RaxError::OutOfMemory())
         } else if old.is_null() {
             Ok(None)
@@ -594,7 +598,7 @@ impl<K: RaxKey, V> RaxMap<K, V> {
                 &iter as *const _ as *const raxIterator,
                 BEGIN.as_ptr(),
                 std::ptr::null_mut(),
-                0
+                0,
             ) != 0 || iter.key_len == 0 {
                 None
             } else {
@@ -795,8 +799,6 @@ impl<K: RaxKey, V> RaxMap<K, V> {
 }
 
 
-use ::alloc::rc::Rc;
-
 pub struct RaxRcMap<K: RaxKey, V> {
     pub rax: *mut rax,
     phantom: std::marker::PhantomData<(K, V)>,
@@ -864,7 +866,9 @@ impl<K: RaxKey, V> RaxRcMap<K, V> {
                 old,
             );
 
-            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+
+//            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+            if r == 0 && std::io::Error::last_os_error().raw_os_error().unwrap_or(0) != 0 {
                 Err(RaxError::OutOfMemory())
             } else if old.is_null() {
                 Ok(None)
@@ -907,7 +911,8 @@ impl<K: RaxKey, V> RaxRcMap<K, V> {
             );
 
             if r == 0 {
-                if nix::errno::errno() == libc::ENOMEM {
+//                if nix::errno::errno() == libc::ENOMEM {
+                if r == 0 && std::io::Error::last_os_error().raw_os_error().unwrap_or(0) != 0 {
                     Err(RaxError::OutOfMemory())
                 } else {
                     Ok(Some(transmute(value)))
@@ -952,7 +957,8 @@ impl<K: RaxKey, V> RaxRcMap<K, V> {
                 old,
             );
 
-            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+//            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+            if r == 0 && std::io::Error::last_os_error().raw_os_error().unwrap_or(0) != 0 {
                 Err(RaxError::OutOfMemory())
             } else if old.is_null() {
                 Ok(None)
@@ -1196,7 +1202,7 @@ impl<K: RaxKey> RaxSet<K> {
             );
 
             if r == 0 {
-                if nix::errno::errno() == libc::ENOMEM {
+                if is_oom() {
                     Err(RaxError::OutOfMemory())
                 } else {
                     Ok(false)
@@ -2181,7 +2187,7 @@ extern "C" fn RaxRcFreeWithCallbackWrapper<V>(v: *mut libc::c_void) {
     unsafe {
         // Re-box it so it can drop it immediately after it leaves this scope.
 //        Box::from_raw(v as *mut V);
-        ::alloc::rc::Rc::from_raw(v as *const V);
+        std::rc::Rc::from_raw(v as *const V);
     }
 }
 
@@ -2315,11 +2321,11 @@ extern "C" {
 
 #[cfg(test)]
 mod tests {
-//    use std;
-    use std::fmt;
-    use std::default::Default;
-    use std::time::{Duration, Instant};
     use redis::rax::*;
+    use std::default::Default;
+    //    use std;
+    use std::fmt;
+    use std::time::{Duration, Instant};
 
     extern "C" fn rax_malloc_hook(size: usize) -> *mut u8 {
         unsafe {

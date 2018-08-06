@@ -1,15 +1,14 @@
 use libc;
-
 use std::{io, ptr};
 use std::fs::File;
 use std::os::unix::io::{AsRawFd, RawFd};
 
 #[cfg(any(all(target_os = "linux", not(target_arch = "mips")), target_os = "freebsd",
-          target_os = "android"))]
+target_os = "android"))]
 const MAP_STACK: libc::c_int = libc::MAP_STACK;
 
 #[cfg(not(any(all(target_os = "linux", not(target_arch = "mips")), target_os = "freebsd",
-              target_os = "android")))]
+target_os = "android")))]
 const MAP_STACK: libc::c_int = 0;
 
 pub struct MmapInner {
@@ -143,11 +142,77 @@ impl MmapInner {
         }
     }
 
+    pub fn is_resident(&self, offset: usize, len: usize) -> bool {
+        let vec_size = (len + page_size() - 1) / page_size();
+
+        unsafe {
+            if vec_size < 17 {
+                let v = &mut [0i8; 16];
+                if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
+                    return false;
+                }
+                for i in 0..vec_size {
+                    if v[i] == 0 {
+                        return false
+                    }
+                }
+                true
+            } else if vec_size < 65 {
+                let v = &mut [0i8; 64];
+                if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
+                    return false;
+                }
+                for i in 0..vec_size {
+                    if v[i] == 0 {
+                        return false
+                    }
+                }
+                true
+            } else if vec_size < 257 {
+                let v = &mut [0i8; 256];
+                if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
+                    return false;
+                }
+                for i in 0..vec_size {
+                    if v[i] == 0 {
+                        return false
+                    }
+                }
+                true
+            } else if vec_size < 1025 {
+                let v = &mut [0i8; 1024];
+                if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
+                    return false;
+                }
+                for i in 0..vec_size {
+                    if v[i] == 0 {
+                        return false
+                    }
+                }
+                true
+            } else if vec_size < 4097 {
+                let v = &mut [0i8; 4096];
+                if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
+                    return false;
+                }
+                for i in 0..vec_size {
+                    if v[i] == 0 {
+                        return false
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        }
+    }
+
     fn mprotect(&mut self, prot: libc::c_int) -> io::Result<()> {
         unsafe {
             let alignment = self.ptr as usize % page_size();
             let ptr = self.ptr.offset(-(alignment as isize));
             let len = self.len + alignment;
+            let mincore = libc::mincore;
             if libc::mprotect(ptr, len, prot) == 0 {
                 Ok(())
             } else {
@@ -192,7 +257,7 @@ impl Drop for MmapInner {
             assert!(
                 libc::munmap(
                     self.ptr.offset(-(alignment as isize)),
-                    (self.len + alignment) as libc::size_t
+                    (self.len + alignment) as libc::size_t,
                 ) == 0,
                 "unable to unmap mmap: {}",
                 io::Error::last_os_error()
@@ -202,6 +267,7 @@ impl Drop for MmapInner {
 }
 
 unsafe impl Sync for MmapInner {}
+
 unsafe impl Send for MmapInner {}
 
 fn page_size() -> usize {

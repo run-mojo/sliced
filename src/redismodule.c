@@ -8,6 +8,31 @@ void* (*redis_realloc)(void*,size_t) = realloc;
 // init with libc free
 void (*redis_free)(void*) = free;
 
+/**
+ * Rust Entry Point
+ */
+int RedisModule_DoLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc);
+
+/**
+ * Redis Entry Point. We hook into C first so we can bootstrap the global allocator
+ * with the imported RedisModule_Alloc, RedisModule_Realloc, RedisModule_Free functions.
+ *
+ * @param ctx
+ * @param argv
+ * @param argc
+ * @return
+ */
+int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (RedisModule_Init(ctx,"slice/d",1,REDISMODULE_APIVER_1)
+        == REDISMODULE_ERR) return REDISMODULE_ERR;
+
+    redis_malloc = RedisModule_Alloc;
+    redis_realloc = RedisModule_Realloc;
+    redis_free = RedisModule_Free;
+
+    return RedisModule_DoLoad(ctx, argv, argc);
+}
+
 // RedisModule_Init is defined as a static function and so won't be exported as
 // a symbol. Export a version under a slightly different name so that we can
 // get access to it from Rust.

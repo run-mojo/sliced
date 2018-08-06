@@ -68,6 +68,10 @@ unsafe impl Send for Listpack {}
 unsafe impl Sync for Listpack {}
 
 impl Listpack {
+    #[inline]
+    pub fn from_raw(lp: *mut u8) -> Listpack {
+        Listpack(lp)
+    }
     pub fn new() -> Listpack {
         unsafe { Listpack(new(ALLOCATOR)) }
     }

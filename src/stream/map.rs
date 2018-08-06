@@ -4,9 +4,7 @@ use std::marker;
 use std::mem;
 use libc;
 
-use nix;
-
-use ::alloc::rc::Rc;
+use std::rc::Rc;
 use ::redis::rax::*;
 use super::id::StreamID;
 
@@ -86,7 +84,7 @@ impl<V> StreamIDMap<V> {
                 old,
             );
 
-            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+            if r == 0 && is_oom() {
                 Err(RaxError::OutOfMemory())
             } else if old.is_null() {
                 Ok(None)
@@ -116,7 +114,7 @@ impl<V> StreamIDMap<V> {
             );
 
             if r == 0 {
-                if nix::errno::errno() == libc::ENOMEM {
+                if is_oom() {
                     Err(RaxError::OutOfMemory())
                 } else {
                     Ok(Some(mem::transmute(value)))
@@ -146,7 +144,7 @@ impl<V> StreamIDMap<V> {
                 old,
             );
 
-            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+            if r == 0 && is_oom() {
                 Err(RaxError::OutOfMemory())
             } else if old.is_null() {
                 Ok(None)

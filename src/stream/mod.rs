@@ -1,16 +1,18 @@
-use ::alloc::{alloc, free, ref_counted};
-use ::alloc::arc::{Arc, Weak as ArcWeak};
-use ::alloc::raw_vec::RawVec;
-use ::alloc::rc::{Rc, Weak};
-use ::redis::listpack::Listpack;
-use ::redis::rax::{RaxMap, RaxRcMap};
-use ::redis::sds::SDS;
-use self::id::{next_id, StreamID};
-use spin::Mutex;
+use std::sync::{Arc, Weak as ArcWeak};
+use std::rc::{Rc, Weak};
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic;
+
+use spin::Mutex;
+
+use ::alloc::{alloc, free, ref_counted};
+use ::redis::listpack::Listpack;
+use ::redis::rax::{RaxMap, RaxRcMap};
+use ::redis::sds::SDS;
+
+use self::id::{next_id, StreamID};
 
 pub mod id;
 pub mod map;
@@ -19,6 +21,7 @@ pub mod aof;
 pub mod record;
 pub mod writer;
 pub mod segment;
+pub mod data_type;
 
 pub const DEFAULT_PACK_SIZE: u32 = 65500;
 // ~64KB
@@ -74,17 +77,82 @@ impl Error for StreamError {
     }
 }
 
+/// slice/d Stream Redis Data Type. This is the core structure. It utilizes
+/// many of the Redis Streams design, models and data structures. The in-memory
+/// representation at a Rax node is identical. slice/d Streams are persistent
+/// and can grow as large as desired, even larger than what the local file-system
+/// can hold.
 ///
+/// A stream is broken down into files called "Segments" which have a series of
+/// "Packs". The Redis data structure "Listpack" is utilized as the Record format
+/// which maps one-to-one with a "Pack". The Redis Streams Listpack format is
+/// kept intact which allows for very efficient interop with Redis Streams.
+///
+/// The I/O strategy makes generous use of memory mapped append-only files (AOF).
+/// The last segment "tail" is always the file being appended to. The strategy
+/// allows for writes to happen from the Redis event-loop when it's determined
+/// to be non-blocking and is just a memcpy. A background I/O thread is utilized
+/// for all blocking I/O operations including Creation, Truncation, Sync / Flushing,
+/// Reads, Writes, etc. If the operation will block it must be scheduled on the
+/// I/O thread. The initial design only utilizes a single thread for blocking
+/// operations.
+///
+/// Memory management is very precise and very conservative. The goal is to operate
+/// at RAM speeds which is inline with Redis' core tenants. Memory is allocated
+/// using Redis Module memory management functions "RedisModule_Alloc",
+/// "RedisModule_Realloc", and "RedisModule_Free". Redis MEMORY commands will include
+/// memory allocated for slice/d Streams. That will NOT include the "on-disk" usage.
+/// That is represented within some slice/d management commands.
+///
+/// A "max-memory" variable may be set and slice/d will try to keep the collective
+/// memory usage of all streams under that amount. slice/d employs sharing the
+/// same memory across any number of consumers. Once a "Pack" is loaded it is never
+/// copied. Instead it is shared through a Reference Counting system and freed when
+/// the "strong" count reaches 0. If no other "strong" counts exist within a
+/// segment, then the segment file handle and pack index is freed as well.
+///
+/// slice/d utilizes the OS kernel for handling "sequential read-ahead" and will
+/// take advantage of a technique the author describes as "non-blocking faulting"
+/// which checks with the kernel if a Pack's on-disk pages are loaded in memory and
+/// will save a background I/O request. Furthermore, since the data is shared among
+/// all clients and consumers, they get a free lunch as well. Most consumers will be
+/// "tailing" the stream and it would be rare to need to fault in memory in the
+/// vast majority of use cases. Range queries are handled with grace all the same.
+/// The bottle neck will become the throughput of Sequential file access similar
+/// to Kafka.
+///
+/// An interesting design component of slice/d Streams comes from Redis Streams
+/// record ID being a 128-bit integer epoch_ms and sequence. This allows for
+/// range queries based on time practically for free. slice/d doubles down on
+/// that concept and utilizes the same system for Segment files as well. Segment
+/// file naming follows a simple convention. The min Record ID is used in the
+/// Segment file name. By utilizing this convention, a very compact Segment index
+/// can be created only utilizing the min Record ID from each segment. The minimum
+/// required amount of memory is deterministic depending on the number of segments.
+/// The default segment size is 64mb. ~100-150 bytes per GB (or 100kb for 1PB) is
+/// needed to maintain the segment index.
 pub struct Stream {
+    /// Internal ID assigned when created.
     id: u64,
+    /// Key string
     name: SDS,
-    /// Each stream has a single writer which has the tail segment.
-    writer: Option<SegmentWriter>,
+
+    /// Number of bytes used within this stream.
+    mem_usage: u64,
+    /// The total size of all segments.
+    disk_usage: u64,
+
     /// A segment can be in two states.
     /// 1. Not Loaded (null in rax)
     /// 2. Loaded (ptr in rax)
     segments: map::StreamIDMap<Segment>,
+
+    /// Each stream has a single writer which has the tail segment.
+    writer: Option<writer::SegmentWriter>,
+
+    /// Configuration settings.
     config: StreamConfig,
+
     /// Consumer groups.
     groups: Option<RaxMap<&'static [u8], ConsumerGroup>>,
 }
@@ -113,15 +181,28 @@ impl Stream {
 }
 
 /// Segments contain a sequence of Packs.
-struct Segment {
+/// This structure is only used when the segment is loaded/being loaded.
+/// In it's unloaded state the Segment Rax in the stream will have null
+/// for it's value which incurs no memory cost outside of it's ID which
+/// is stored with prefix compression within the Rax. This design allows
+/// for a stream to have a full index of it's keyspace sorted by segment,
+/// but only load on-demand. This is ideal for Streams since most consumers
+/// will be towards the tail.
+pub struct Segment {
     /// A view of the segment data.
-    data: Option<::mmap::Mmap>,
+    /// The file handle is independent of the Pack index.
+    data: Option<::mmap::MmapMut>,
 
+    /// The pack index must be all inclusive of the entire segment.
+    /// However, each packs data may be faulted in and freed based
+    /// on demand.
     packs: map::StreamIDMap<Pack>,
 }
 
 impl Segment {
-    pub fn would_block(&self, pack: &mut Pack) -> bool {
+    pub fn would_block(&mut self, pack: &mut Pack) -> bool {
+        use std::ptr;
+
         // Is the pack already loaded?
         if pack.data.is_some() {
             return false
@@ -129,78 +210,33 @@ impl Segment {
 
         match self.data {
             Some(ref mmap) => {
-                // TODO: mincore() optimization
-                // If the OS pages required to load the Pack are resident in-memory,
-                // then do load operation immediately since it won't block.
-                true
+                if mmap.is_resident(pack.offset as usize, pack.length as usize) {
+                    // mincore() optimization
+                    // If the OS pages required to load the Pack are resident in-memory,
+                    // then do load operation immediately since it won't block.
+
+                    // Allocate listpack with room for the header.
+                    let lp = ::alloc::alloc(pack.length as usize + 6);
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            mmap.as_ptr().offset(pack.offset as isize),
+                            // Copy to right past header.
+                            lp.offset(6),
+                            pack.length as usize
+                        );
+                    }
+                    // Set raw header.
+                    ::redis::listpack::set_total_bytes(lp, pack.length as u32 + 6u32);
+                    ::redis::listpack::set_num_elements(lp, pack.count);
+
+                    pack.data = Some(Listpack::from_raw(lp));
+                    false
+                } else {
+                    true
+                }
             }
             None => true
         }
-    }
-}
-
-struct SegmentIndex {
-
-}
-
-struct AddCommand {
-
-}
-
-struct SegmentWriter {
-    last_id: StreamID,
-
-    /// ID of the segment is the min StreamID available within it.
-    segment_id: StreamID,
-    segment: Rc<Segment>,
-    /// Active AOF.
-    /// Path = {root_dir}/stream_id/0.dat
-    aof: Option<aof::AOF>,
-    tail: Rc<Pack>,
-
-    next_segment: Rc<Segment>,
-    /// Path = {root_dir}/stream_id/next.dat
-    next_aof: Option<aof::AOF>,
-
-    /// Starting segment size. This allows the ability to start all streams
-    /// as compact as possible as well as optimize away truncate operations
-    /// for long living streams with a history. For example, if we know we
-    /// will hit the max as we have before then just allocate to the max.
-    /// Segments files are relatively small so it's almost always what you
-    /// want. However, this can also support many small streams such as a
-    /// stream per user.
-    seg_min: u32,
-    /// Number of bytes to try to keep segment files within.
-    seg_max: u32,
-
-    /// Number of bytes to try to keep packs within. The larger the pack,
-    /// the more compressible it could be and more records will be able
-    /// to fit. A pack is the minimum sized memory allocation possible
-    /// when accessing a stream. If only a single record is needed, all
-    /// the other records within the Pack will be loaded as a side-effect.
-    /// Since streams are meant to be well, "streamy", it's not optimized
-    /// for key-value lookup although it is supported. This is optimal for
-    /// range based queries though since there is great memory locality
-    /// between a range of records.
-    pack_max: u32,
-
-    /// Currently waiting to here back about the grow request.
-    growing: bool,
-}
-
-impl SegmentWriter {
-    pub fn next_id(&mut self) -> StreamID {
-        self.last_id = id::next_id(&self.last_id);
-        self.last_id
-    }
-
-    pub fn finish_segment(&mut self) {
-        // Write segment index to the end of it's file.
-
-        // Rename file to the segment ID in string format "{ms}-{seq}.dat"
-        // Once a file is name is changed it is guaranteed to be complete and correct.
-        // If a crash happens then only the "0.dat" file in each stream needs
-        // to be recovered.
     }
 }
 
@@ -229,15 +265,19 @@ pub struct Pack {
     /// The actual content in Redis Streams listpack format.
     /// These represent a Rax node.
     data: Option<Listpack>,
+    /// Keep a reference it's parent segment to ensure the segment structure
+    /// remains in memory for the lifetime of the pack.
     segment: Option<Rc<Segment>>,
 }
 
 impl Drop for Pack {
     fn drop(&mut self) {
-        // Free up Listpack once Pack is only weakly referenced.
+        // Force dealloc on the Listpack once Pack is only weakly referenced.
         self.data = None;
         // Decrement segment ref count.
         self.segment = None;
+
+        // Debug
         println!("dropped Pack Data");
     }
 }
@@ -254,7 +294,6 @@ impl Drop for Pack {
 
 pub type Pin = Rc<Pack>;
 
-
 struct ConsumerGroup {
     /// Deduplication check.
     /// If key exists, but NACK is null then request is rejected.
@@ -262,12 +301,12 @@ struct ConsumerGroup {
     pending: RaxMap<StreamID, NACK>,
 
     /// Reserve the
-    pins: RawVec<Pin>,
+    pins: Vec<Pin>,
 }
 
 pub struct Cursor {
     rev: bool,
-    pins: RawVec<Pin>,
+    pins: Vec<Pin>,
 }
 
 /// Pending (not yet acknowledged) message in a consumer group.
@@ -291,7 +330,7 @@ struct Consumer {}
 ///
 /// Rust's future API is used for operating on segment data away from the
 /// event-loop. The segment manager receives all requests.
-struct StreamManager {
+pub struct StreamManager {
     /// The maximum amount of RAM that is allowed for the collective
     /// usage of all Streams and all of it's in-memory representations.
     max_memory: u64,
@@ -316,25 +355,14 @@ impl StreamManager {
         }
     }
 
-    pub fn start(&mut self) {
-//        std::thread::spawn(move || {
-//
-//        });
-    }
-
     pub fn create_stream(&mut self, name: SDS) -> Result<Rc<Stream>, StreamError> {
         unsafe {
             let mut streams = &mut self.streams;
-//            match streams.find(name) {
-//                Some(s) => return Err(StreamError::Exists)
-//            }
-
-//            if streams.exists(name.clone()) {
-//                return Err(StreamError::Exists)
-//            }
 
             let stream = ref_counted(Stream {
                 id: 0,
+                mem_usage: 0,
+                disk_usage: 0,
                 name: name.clone(),
                 writer: None,
                 segments: map::StreamIDMap::new(),
@@ -361,45 +389,6 @@ impl StreamManager {
             }
 
 
-//            match streams.insert_ptr(name, Rc::into_raw(stream.clone()) as *const _ as *mut u8) {
-//                Ok(_) => {}
-//                Err(e) => {
-//                    match e {
-//                        RaxError::OutOfMemory() => return Err(StreamError::OutOfMemory),
-//                        _ => return Err(StreamError::Generic(String::new()))
-//                    }
-//                }
-//            }
-
-            // Write to global AOF + Propagate
-            // MO.X CREATE mystream id 10 seg 64mb pack 64kb
-            // MO.X GROUP mystream mygroup
-            // MO.X DELGROUP mystream mygroup
-            // MO.X CONSUMER
-            // MO.X DELCONSUMER
-            // MO.X FAILED mystream mygroup id 10
-            // MO.X SEG mystream 10
-            // MO.X SEGMERGE mystream 10 11
-            // MO.X SEGDEL mystream 10
-            // MO.X DEL mystream
-            // MO.X SEGMENT CREATE 10 10000003832-10
-            // MO.XADD
-            // MO.X SEGMENT FOLD 10000002340-10
-
-
-            // Rewrite AOF
-            // Save stream
-
-            // MO.X SEGMENT ADD mystream 10 start 64mb max 64mb pack 64kb
-
-            // MO.STREAM REMOVE SEGMENT mystream 10
-
-            // MO.XADD
-            // MO.XREADGROUP
-            // MO.XREAD
-            // MO.XRANGE
-            // MO.XTRIM
-            // MO.XDEL
 
             Ok(stream.clone())
         }

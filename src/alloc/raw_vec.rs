@@ -17,7 +17,7 @@ use std::slice;
 use std::alloc::{Alloc, Layout, handle_alloc_error};
 use std::collections::CollectionAllocErr;
 use std::collections::CollectionAllocErr::*;
-use super::boxed::Box;
+use std::boxed::Box;
 
 /// A low-level utility for more ergonomically allocating, reallocating, and deallocating
 /// a buffer of memory on the heap without having to worry about all the corner cases
@@ -47,7 +47,7 @@ use super::boxed::Box;
 /// field. This allows zero-sized types to not be special-cased by consumers of
 /// this type.
 #[allow(missing_debug_implementations)]
-pub struct RawVec<T, A: Alloc = super::RustAllocator> {
+pub struct RawVec<T, A: Alloc = super::RedisAllocator> {
     ptr: Unique<T>,
     cap: usize,
     a: A,
@@ -117,14 +117,14 @@ impl<T, A: Alloc> RawVec<T, A> {
     }
 }
 
-impl<T> RawVec<T, super::RustAllocator> {
+impl<T> RawVec<T, super::RedisAllocator> {
     /// Creates the biggest possible RawVec (on the system heap)
     /// without allocating. If T has positive size, then this makes a
     /// RawVec with capacity 0. If T has 0 size, then it makes a
     /// RawVec with capacity `usize::MAX`. Useful for implementing
     /// delayed allocation.
     pub const fn new() -> Self {
-        Self::new_in(super::RustAllocator)
+        Self::new_in(super::RedisAllocator)
     }
 
     /// Creates a RawVec (on the system heap) with exactly the
@@ -144,13 +144,13 @@ impl<T> RawVec<T, super::RustAllocator> {
     /// Aborts on OOM
     #[inline]
     pub fn with_capacity(cap: usize) -> Self {
-        RawVec::allocate_in(cap, false, super::RustAllocator)
+        RawVec::allocate_in(cap, false, super::RedisAllocator)
     }
 
     /// Like `with_capacity` but guarantees the buffer is zeroed.
     #[inline]
     pub fn with_capacity_zeroed(cap: usize) -> Self {
-        RawVec::allocate_in(cap, true, super::RustAllocator)
+        RawVec::allocate_in(cap, true, super::RedisAllocator)
     }
 }
 
@@ -171,7 +171,7 @@ impl<T, A: Alloc> RawVec<T, A> {
     }
 }
 
-impl<T> RawVec<T, super::RustAllocator> {
+impl<T> RawVec<T, super::RedisAllocator> {
     /// Reconstitutes a RawVec from a pointer, capacity.
     ///
     /// # Undefined Behavior
@@ -183,7 +183,7 @@ impl<T> RawVec<T, super::RustAllocator> {
         RawVec {
             ptr: Unique::new_unchecked(ptr),
             cap,
-            a: super::RustAllocator,
+            a: super::RedisAllocator,
         }
     }
 
@@ -690,7 +690,7 @@ impl<T, A: Alloc> RawVec<T, A> {
 
 }
 
-impl<T> RawVec<T, super::RustAllocator> {
+impl<T> RawVec<T, super::RedisAllocator> {
     /// Converts the entire buffer into `Box<[T]>`.
     ///
     /// While it is not *strictly* Undefined Behavior to call
