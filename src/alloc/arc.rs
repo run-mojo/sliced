@@ -38,7 +38,7 @@ use std::string::String;
 use std::vec::Vec;
 
 use super::rc::is_dangling;
-use super::ralloc::*;
+use super::*;
 
 /// A soft limit on the amount of references that may be made to an `Arc`.
 ///
@@ -1468,7 +1468,7 @@ mod tests {
     use std::convert::From;
 
     use super::{Arc, Weak};
-    use super::super::ralloc;
+    use super::*;
 
     use std::vec::Vec;
 
@@ -1532,7 +1532,7 @@ mod tests {
 
     #[test]
     fn into_from_raw() {
-        let x = Arc::new(ralloc::boxed("hello"));
+        let x = Arc::new(boxed("hello"));
         let y = x.clone();
 
         let x_ptr = Arc::into_raw(x);
@@ -1836,7 +1836,7 @@ mod tests {
 
     #[test]
     fn test_from_box() {
-        let b: Box<u32> = ralloc::boxed(123);
+        let b: Box<u32> = boxed(123);
         let r: Arc<u32> = Arc::from(b);
 
         assert_eq!(*r, 123);
@@ -1865,7 +1865,7 @@ mod tests {
         use std::fmt::Display;
         use std::string::ToString;
 
-        let b: Box<dyn Display> = ralloc::boxed(123);
+        let b: Box<dyn Display> = boxed(123);
         let r: Arc<dyn Display> = Arc::from(b);
 
         assert_eq!(r.to_string(), "123");
@@ -1875,7 +1875,7 @@ mod tests {
     fn test_from_box_trait_zero_sized() {
         use std::fmt::Debug;
 
-        let b: Box<dyn Debug> = ralloc::boxed(());
+        let b: Box<dyn Debug> = boxed(());
         let r: Arc<dyn Debug> = Arc::from(b);
 
         assert_eq!(format!("{:?}", r), "()");

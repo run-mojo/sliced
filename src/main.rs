@@ -28,10 +28,10 @@ use sliced::mmap::MmapMut;
 use sliced::page_size;
 use sliced::redis::listpack::*;
 use sliced::redis::listpack::*;
-use sliced::redis::ralloc;
+use sliced::alloc::*;
+use sliced::alloc::rc::Rc;
 use sliced::redis::rax::*;
 use sliced::redis::sds::*;
-use sliced::redis::rc::Rc;
 
 use spin::RwLock;
 use std::cmp::Ordering;
@@ -437,7 +437,7 @@ impl StreamManager {
 //                return Err(StreamError::Exists)
 //            }
 
-            let stream = Rc::from_raw(ralloc::leak_raw(Stream {
+            let stream = Rc::from_raw(leak_raw(Stream {
                 id: 0,
                 name: name,
                 counter: 0,
@@ -500,7 +500,7 @@ impl StreamManager {
         unsafe {
             let segments = &mut s.segments;
 
-            let segment = Rc::from_raw(ralloc::leak_raw(Segment {
+            let segment = Rc::from_raw(leak_raw(Segment {
 //                id: self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
                 inner: Some(SegmentIndex {
                     mmap: None,
@@ -558,7 +558,7 @@ struct Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        ralloc::free(self);
+        sliced::alloc::free(self);
         println!("dropped Stream");
     }
 }
@@ -722,7 +722,7 @@ impl Segment {
 
 impl Drop for Segment {
     fn drop(&mut self) {
-        ralloc::free(self);
+        sliced::alloc::free(self);
         println!("dropped Segment");
     }
 }
@@ -757,13 +757,13 @@ pub struct Pack {
     count: u16,
     /// The actual content in Redis Streams listpack format.
     /// These represent a Rax node.
-    data: Option<sliced::redis::rc::Weak<Pin>>,
+    data: Option<sliced::alloc::rc::Weak<Pin>>,
 }
 
 impl Drop for Pack {
     fn drop(&mut self) {
         self.data = None;
-        ralloc::free(self);
+        sliced::alloc::free(self);
         println!("dropped Pack");
     }
 }
@@ -791,7 +791,7 @@ impl Drop for Pin {
 //        let mut lock = self.data.lock();
 //        *lock.as_mut() = None;
 //        drop(lock);
-        ralloc::free(self);
+        sliced::alloc::free(self);
         println!("dropped Pin");
     }
 }
@@ -1057,7 +1057,7 @@ fn next_id(last: &StreamID) -> StreamID {
 pub mod raw {
     use ::StreamID;
     use sliced::redis::listpack::*;
-    use sliced::redis::ralloc;
+    use sliced::alloc::*;
     use sliced::redis::rax::*;
     use sliced::redis::sds::*;
     use std::mem;
@@ -1076,7 +1076,7 @@ pub mod raw {
         pub fn new() -> *mut stream {
             unsafe {
                 // Heap allocate Redis Stream.
-                let s = ralloc::alloc(
+                let s = alloc(
                     mem::size_of::<stream>()
                 ) as *mut stream;
 

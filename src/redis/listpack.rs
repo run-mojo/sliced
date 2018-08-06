@@ -34,7 +34,7 @@
 //! it is more natural to represent them in this way for the way the specification
 //! maps to C code).
 
-use redis::ralloc::*;
+use ::alloc::*;
 use std;
 use std::alloc::*;
 use std::mem::size_of;
@@ -2475,7 +2475,7 @@ impl_str_as_ptr!(&'a str);
 #[cfg(test)]
 mod tests {
     use redis::listpack::*;
-    use redis::ralloc::*;
+    use alloc::*;
     use std;
 
     #[test]

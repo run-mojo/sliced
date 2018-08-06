@@ -63,6 +63,8 @@ pub mod cmd;
 pub mod error;
 pub mod redis;
 pub mod types;
+pub mod alloc;
+pub mod stream;
 
 /// Module name and version
 const MODULE_NAME: &'static str = "slice/d";

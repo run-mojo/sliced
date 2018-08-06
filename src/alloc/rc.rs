@@ -259,7 +259,7 @@ use std::usize;
 
 use std::alloc::{Layout};
 
-use redis::ralloc::*;
+use super::*;
 use std::string::String;
 use std::vec::Vec;
 
@@ -1374,7 +1374,7 @@ mod tests {
     use std::mem::drop;
     use std::clone::Clone;
     use std::convert::From;
-    use super::super::ralloc;
+    use super::*;
 //    use super::super::boxed::*;
 
     #[test]
@@ -1695,7 +1695,7 @@ mod tests {
 
     #[test]
     fn test_from_box() {
-        let b: Box<u32> = ralloc::boxed(123);
+        let b: Box<u32> = boxed(123);
         let r: Rc<u32> = Rc::from(b);
 
         assert_eq!(*r, 123);
@@ -1724,7 +1724,7 @@ mod tests {
         use std::fmt::Display;
         use std::string::ToString;
 
-        let b: Box<dyn Display> = ralloc::boxed(123);
+        let b: Box<dyn Display> = boxed(123);
         let r: Rc<dyn Display> = Rc::from(b);
 
         assert_eq!(r.to_string(), "123");
@@ -1734,7 +1734,7 @@ mod tests {
     fn test_from_box_trait_zero_sized() {
         use std::fmt::Debug;
 
-        let b: Box<dyn Debug> = ralloc::boxed(());
+        let b: Box<dyn Debug> = boxed(());
         let r: Rc<dyn Debug> = Rc::from(b);
 
         assert_eq!(format!("{:?}", r), "()");

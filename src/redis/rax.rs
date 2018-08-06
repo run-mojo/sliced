@@ -795,6 +795,298 @@ impl<K: RaxKey, V> RaxMap<K, V> {
 }
 
 
+use ::alloc::rc::Rc;
+
+pub struct RaxRcMap<K: RaxKey, V> {
+    pub rax: *mut rax,
+    phantom: std::marker::PhantomData<(K, V)>,
+}
+
+impl<K: RaxKey, V> Drop for RaxRcMap<K, V> {
+    fn drop(&mut self) {
+        unsafe {
+            println!("dropped RC RAX");
+            if !self.rax.is_null() {
+                // Cleanup RAX
+                raxFreeWithCallback(self.rax, RaxRcFreeWithCallbackWrapper::<V>);
+            }
+        }
+    }
+}
+
+/// Implementation of RaxMap
+impl<K: RaxKey, V> RaxRcMap<K, V> {
+    pub fn new() -> RaxRcMap<K, V> {
+        unsafe {
+            RaxRcMap {
+                rax: raxNew(),
+                phantom: std::marker::PhantomData,
+            }
+        }
+    }
+
+    /// The number of entries in the RAX
+    pub fn len(&self) -> u64 {
+        unsafe { raxSize(self.rax) }
+    }
+
+    /// The number of entries in the RAX
+    pub fn size(&self) -> u64 {
+        unsafe { raxSize(self.rax) }
+    }
+
+    /// Prints the Rax as ASCII art to stdout.
+    pub fn show(&self) {
+        unsafe { raxShow(self.rax) }
+    }
+
+    /// Insert or replace existing key with a NULL value.
+    pub fn insert_null(&mut self, key: K) -> Result<Option<Rc<V>>, RaxError> {
+        unsafe {
+            // Allocate a pointer to catch the old value.
+            let old: &mut *mut u8 = &mut ptr::null_mut();
+
+            // Integer values require Big Endian to allow the Rax to fully optimize
+            // storing them since it will be able to compress the prefixes especially
+            // for 64/128bit numbers.
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let r = raxInsert(
+                self.rax,
+                // Grab a raw pointer to the key. Keys are most likely allocated
+                // on the stack. The rax will keep it's own copy of the key so we
+                // don't want to keep in in the heap twice and it exists in the
+                // rax in it's compressed form.
+                ptr,
+                len,
+                std::ptr::null_mut(),
+                old,
+            );
+
+            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+                Err(RaxError::OutOfMemory())
+            } else if old.is_null() {
+                Ok(None)
+            } else {
+                // Box the previous value since Rax is done with it and it's our
+                // responsibility now to drop it. Once this Box goes out of scope
+                // the value is dropped and memory reclaimed.
+                Ok(Some(Rc::from_raw(*old as *const V)))
+            }
+        }
+    }
+
+    /// Insert a new entry into the RAX if an existing one does not exist.
+    pub fn try_insert(&mut self, key: K, data: Rc<V>) -> Result<Option<Rc<V>>, RaxError> {
+        unsafe {
+            // Allocate a pointer to catch the old value.
+            let old: &mut *mut u8 = &mut ptr::null_mut();
+
+            // Leak the boxed value as we hand it over to Rax to keep track of.
+            // These must be heap allocated unless we want to store sizeof(usize) or
+            // less bytes, then the value can be the pointer.
+            let value = Rc::into_raw(data);
+
+            // Integer values require Big Endian to allow the Rax to fully optimize
+            // storing them since it will be able to compress the prefixes especially
+            // for 64/128bit numbers.
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let r = raxTryInsert(
+                self.rax,
+                // Grab a raw pointer to the key. Keys are most likely allocated
+                // on the stack. The rax will keep it's own copy of the key so we
+                // don't want to keep in in the heap twice and it exists in the
+                // rax in it's compressed form.
+                ptr,
+                len,
+                value as *mut V as *mut u8,
+                old,
+            );
+
+            if r == 0 {
+                if nix::errno::errno() == libc::ENOMEM {
+                    Err(RaxError::OutOfMemory())
+                } else {
+                    Ok(Some(transmute(value)))
+                }
+            } else if old.is_null() {
+                Ok(None)
+            } else {
+                // This shouldn't happen, but if it does let's be safe and
+                // not leak memory.
+                Ok(Some(Rc::from_raw(*old as *const V)))
+            }
+        }
+    }
+
+    /// Insert a new entry into the RAX replacing and returning the existing
+    /// entry for the supplied key.
+    pub fn insert(&mut self, key: K, data: Rc<V>) -> Result<Option<Rc<V>>, RaxError> {
+        unsafe {
+            // Allocate a pointer to catch the old value.
+            let old: &mut *mut u8 = &mut ptr::null_mut();
+
+            // Leak the boxed value as we hand it over to Rax to keep track of.
+            // These must be heap allocated unless we want to store sizeof(usize) or
+            // less bytes, then the value can be the pointer.
+            let value = Rc::into_raw(data);
+
+            // Integer values require Big Endian to allow the Rax to fully optimize
+            // storing them since it will be able to compress the prefixes especially
+            // for 64/128bit numbers.
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let r = raxInsert(
+                self.rax,
+                // Grab a raw pointer to the key. Keys are most likely allocated
+                // on the stack. The rax will keep it's own copy of the key so we
+                // don't want to keep in in the heap twice and it exists in the
+                // rax in it's compressed form.
+                ptr,
+                len,
+                value as *mut V as *mut u8,
+                old,
+            );
+
+            if r == 0 && nix::errno::errno() == libc::ENOMEM {
+                Err(RaxError::OutOfMemory())
+            } else if old.is_null() {
+                Ok(None)
+            } else {
+                // Box the previous value since Rax is done with it and it's our
+                // responsibility now to drop it. Once this Box goes out of scope
+                // the value is dropped and memory reclaimed.
+                Ok(Some(Rc::from_raw(*old as *const V)))
+            }
+        }
+    }
+
+    ///
+    ///
+    ///
+    pub fn remove(&mut self, key: K) -> (bool, Option<Rc<V>>) {
+        unsafe {
+            let old: &mut *mut u8 = &mut ptr::null_mut();
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let r = raxRemove(
+                self.rax,
+                ptr,
+                len,
+                old,
+            );
+
+            if old.is_null() {
+                (r == 1, None)
+            } else {
+                (r == 1, Some(Rc::from_raw(*old as *const V)))
+            }
+        }
+    }
+
+    ///
+    ///
+    ///
+    pub fn find_exists(&self, key: K) -> (bool, Option<Rc<V>>) {
+        unsafe {
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let value = raxFind(
+                self.rax,
+                ptr,
+                len,
+            );
+
+            if value.is_null() {
+                (true, None)
+            } else if value == raxNotFound {
+                (false, None)
+            } else {
+                // transmute to the value so we don't drop the actual value accidentally.
+                // While the key associated to the value is in the RAX then we cannot
+                // drop it.
+                (true, Some(Rc::from_raw(value as *const _ as *const V).clone()))
+            }
+        }
+    }
+
+    /// Same as get but added for semantics parity.
+    pub fn find(&self, key: K) -> Option<Rc<V>> {
+        unsafe {
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let value = raxFind(
+                self.rax,
+                ptr,
+                len,
+            );
+
+            if value.is_null() || value == raxNotFound {
+                None
+            } else {
+                // transmute to the value so we don't drop the actual value accidentally.
+                // While the key associated to the value is in the RAX then we cannot
+                // drop it.
+//                Some(std::mem::transmute(value))
+                Some(Rc::from_raw(value as *const _ as *const V).clone())
+            }
+        }
+    }
+
+    ///
+    ///
+    ///
+    pub fn get(&self, key: K) -> Option<Rc<V>> {
+        unsafe {
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let value = raxFind(
+                self.rax,
+                ptr,
+                len,
+            );
+
+            if value.is_null() || value == raxNotFound {
+                None
+            } else {
+                // transmute to the value so we don't drop the actual value accidentally.
+                // While the key associated to the value is in the RAX then we cannot
+                // drop it.
+                Some(Rc::from_raw(value as *const _ as *const V).clone())
+            }
+        }
+    }
+
+    /// Determines if the supplied key exists in the Rax.
+    pub fn exists(&self, key: K) -> bool {
+        unsafe {
+            let k = key.encode();
+            let (ptr, len) = k.to_buf();
+
+            let value = raxFind(
+                self.rax,
+                ptr,
+                len,
+            );
+
+            if value.is_null() || value == raxNotFound {
+                false
+            } else {
+                true
+            }
+        }
+    }
+}
+
+
 /// RaxMap but without the values. The "isnull" bit will be set for
 /// all entries.
 /// #Examples
@@ -1885,11 +2177,21 @@ pub struct raxIterator;
 
 #[allow(non_snake_case)]
 #[allow(non_camel_case_types)]
+extern "C" fn RaxRcFreeWithCallbackWrapper<V>(v: *mut libc::c_void) {
+    unsafe {
+        // Re-box it so it can drop it immediately after it leaves this scope.
+//        Box::from_raw(v as *mut V);
+        ::alloc::rc::Rc::from_raw(v as *const V);
+    }
+}
+
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
 extern "C" fn RaxFreeWithCallbackWrapper<V>(v: *mut libc::c_void) {
     unsafe {
         // Re-box it so it can drop it immediately after it leaves this scope.
 //        Box::from_raw(v as *mut V);
-        std::rc::Rc::from_raw(v as *const V);
+        Box::from_raw(v as *mut V);
     }
 }
 

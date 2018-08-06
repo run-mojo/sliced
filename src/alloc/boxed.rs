@@ -88,13 +88,13 @@ impl<T> Box<T> {
     /// ```
     #[inline(always)]
     pub fn new(x: T) -> Box<T> {
-        unsafe { Box(Unique::new_unchecked(super::ralloc::leak_raw(x))) }
+        unsafe { Box(Unique::new_unchecked(super::leak_raw(x))) }
     }
 }
 
 impl<T: ?Sized> Drop for Box<T> {
     fn drop(&mut self) {
-        super::ralloc::free(self);
+        super::free(self);
     }
 }
 
@@ -249,7 +249,7 @@ impl<T: ?Sized> Box<T> {
 impl<T: Default> Default for Box<T> {
     /// Creates a `Box<T>`, with the `Default` value for T.
     fn default() -> Box<T> {
-        unsafe { Box(Unique::new_unchecked(super::ralloc::leak_raw(Default::default()))) }
+        unsafe { Box(Unique::new_unchecked(super::leak_raw(Default::default()))) }
     }
 }
 
