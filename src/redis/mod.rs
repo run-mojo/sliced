@@ -2,12 +2,15 @@
 
 use error::SlicedError;
 use libc;
-//use std::collections::HashMap;
 use std::error::Error;
 use std::iter;
 use std::ptr;
 use std::string;
 use time;
+
+use redis::sds::SDSRead;
+
+use smallvec::SmallVec;
 
 // `raw` should not be public in the long run. Build an abstraction interface
 // instead.
@@ -24,7 +27,9 @@ pub mod listpack;
 allow(redundant_field_names, suspicious_arithmetic_impl))]
 pub mod rax;
 pub mod sds;
-//pub mod stream;
+pub mod object;
+
+pub type TimerID = api::RedisModuleTimerID;
 
 /// `LogLevel` is a level of logging to be specified with a Redis log directive.
 #[derive(Clone, Copy, Debug)]
@@ -49,21 +54,6 @@ pub enum Reply {
 
 pub type Status = api::Status;
 
-//pub fn run_on_event_loop<F>(ctx: *mut api::RedisModuleCtx, millis: i64, f: F) -> api::RedisModuleTimerID where F: Fn() {
-//    let mut x = 0 as *mut u8;
-//    api::create_timer(
-//        ctx,
-//        millis,
-//        Some(sliced_timer_callback_wrapper::<F>),
-//        unsafe { (&mut x) as *mut _ as *mut *mut libc::c_void })
-//    )
-//}
-//
-//pub fn cancel_timer(ctx: *mut api::RedisModuleCtx, timer_id: api::RedisModuleTimerID) -> api::Status {
-//    let mut x = 0 as *mut u8;
-//    api::stop_timer(ctx, timer_id, (&mut x) as *mut _ as *mut *mut libc::c_void)
-//}
-
 pub trait DataType {
     fn redis_type(&self) -> &'static api::RedisModuleType;
 
@@ -73,6 +63,47 @@ pub trait DataType {
 impl DataType {
     pub fn register(_ctx: *mut api::RedisModuleCtx) {
 //        raw::RedisModule_CreateDataType(ctx, )
+    }
+}
+
+/// Command is a basic trait for a new command to be registered with a Redis
+/// module.
+pub trait RedisCommand {
+    // Should return the name of the command to be registered.
+    fn name(&self) -> &'static str;
+
+    // Run the command.
+    fn run(&self, r: Redis, args: &[listpack::Value]) -> Result<(), SlicedError>;
+
+    // Should return any flags to be registered with the name as a string
+    // separated list. See the Redis module API documentation for a complete
+    // list of the ones that are available.
+    fn str_flags(&self) -> &'static str;
+}
+
+impl RedisCommand {
+    /// Provides a basic wrapper for a command's implementation that parses
+    /// arguments to Rust data types and handles the OK/ERR reply back to Redis.
+    pub fn harness<'a>(
+        command: &Command,
+        ctx: *mut api::RedisModuleCtx,
+        argv: *mut *mut api::RedisModuleString,
+        argc: libc::c_int,
+    ) -> api::Status {
+        let r = Redis { ctx };
+
+        let args = parse_args_old(argv, argc).unwrap();
+        let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        match command.run(r, str_args.as_slice()) {
+            Ok(_) => api::Status::Ok,
+            Err(e) => {
+                api::reply_with_error(
+                    ctx,
+                    format!("Cell error: {}\0", e.description()).as_ptr(),
+                );
+                api::Status::Err
+            }
+        }
     }
 }
 
@@ -100,13 +131,9 @@ impl Command {
         argv: *mut *mut api::RedisModuleString,
         argc: libc::c_int,
     ) -> api::Status {
-//        let timers: &mut HashMap<i64, &'a mut TimerHandle> = &mut HashMap::new();
-
         let r = Redis { ctx };
 
-//        timers.insert(0, &TimerHandle{ redis: r, callback: None });
-
-        let args = parse_args(argv, argc).unwrap();
+        let args = parse_args_old(argv, argc).unwrap();
         let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         match command.run(r, str_args.as_slice()) {
             Ok(_) => api::Status::Ok,
@@ -120,10 +147,6 @@ impl Command {
         }
     }
 }
-
-pub struct Cluster;
-
-pub type TimerID = api::RedisModuleTimerID;
 
 /// Redis is a structure that's designed to give us a high-level interface to
 /// the Redis module API by abstracting away the raw C FFI calls.
@@ -186,6 +209,7 @@ impl Redis {
         // on the other end anyway so the practical benefit will be minimal.
         let format: String = iter::repeat("s").take(args.len()).collect();
 
+        // TODO: Use SmallVec
         let terminated_args: Vec<RedisString> =
             args.iter().map(|s| self.create_string(s)).collect();
 
@@ -233,7 +257,9 @@ impl Redis {
                 terminated_args[2].str_inner,
                 terminated_args[3].str_inner,
             ),
-            _ => return Err(error!("Can't support that many CALL arguments")),
+            _ => return Err(SlicedError::Generic(
+                ::error::GenericError::new("Can't support that many CALL arguments")
+            )),
         };
 
         let reply_res = manifest_redis_reply(raw_reply);
@@ -333,6 +359,26 @@ impl Redis {
         let redis_str = self.create_string(message);
         handle_status(
             api::reply_with_string(self.ctx, redis_str.str_inner),
+            "Could not reply with string",
+        )
+    }
+
+    pub fn reply_value(&self, value: listpack::Value) -> Result<(), SlicedError> {
+        match value {
+            listpack::Value::Int(v) => handle_status(
+                api::reply_with_long_long(self.ctx, v),
+                "Could not reply with integer",
+            ),
+            listpack::Value::String(p, size) => handle_status(
+                api::reply_with_string_buffer(self.ctx, p, size as usize),
+                "Could not reply with integer",
+            )
+        }
+    }
+
+    pub fn reply_sds(&self, message: sds::Sds) -> Result<(), SlicedError> {
+        handle_status(
+            api::reply_with_string_buffer(self.ctx, message as *const u8, sds::get_len(message)),
             "Could not reply with string",
         )
     }
@@ -524,6 +570,7 @@ fn manifest_redis_reply(
     }
 }
 
+#[deprecated]
 fn manifest_redis_string(
     redis_str: *mut api::RedisModuleString,
 ) -> Result<String, string::FromUtf8Error> {
@@ -532,7 +579,39 @@ fn manifest_redis_string(
     from_byte_string(bytes, length)
 }
 
-fn parse_args(
+
+
+
+//pub fn args_as_sds(
+//    argv: *mut *mut api::RedisModuleString,
+//    argc: libc::c_int,
+//) -> SmallVec<[sds::ImmutableSDS;32]> {
+//    let mut args: SmallVec<[_;32]> = SmallVec::with_capacity(argc as usize);
+//    for i in 0..argc {
+//        let redis_str = unsafe { *argv.offset(i as isize) };
+//        let size: libc::size_t = 0;
+//        args.push(sds::ImmutableSDS(api::string_ptr_len(redis_str, ptr::null_mut()) as *mut libc::c_char));
+//    }
+//    args
+//}
+
+pub fn parse_args(
+    argv: *mut *mut api::RedisModuleString,
+    argc: libc::c_int,
+) -> SmallVec<[listpack::Value;32]> {
+    let mut args: SmallVec<[_;32]> = SmallVec::with_capacity(argc as usize);
+    for i in 0..argc {
+        let redis_str = unsafe { *argv.offset(i as isize) };
+        let mut size: libc::size_t = 0;
+        let ptr = api::string_ptr_len(redis_str, &mut size as *mut libc::size_t);
+        // Parse the SDS string and automatically coerce integers.
+        args.push(listpack::parse_raw(ptr, size));
+    }
+    args
+}
+
+
+fn parse_args_old(
     argv: *mut *mut api::RedisModuleString,
     argc: libc::c_int,
 ) -> Result<Vec<String>, string::FromUtf8Error> {
@@ -570,4 +649,9 @@ fn to_raw_mode(mode: KeyMode) -> api::KeyMode {
         KeyMode::Read => api::KeyMode::READ,
         KeyMode::ReadWrite => api::KeyMode::READ | api::KeyMode::WRITE,
     }
+}
+
+
+pub struct CallArg {
+
 }

@@ -23,6 +23,7 @@ fn main() {
         .file("src/c/sha1.c")
         .file("src/c/dict.c")
         .file("src/c/util.c")
+        .file("src/c/object.c")
 //        .file("src/c/stream.c")
         .include("src/c/")
         .compile("libredismodule.a");

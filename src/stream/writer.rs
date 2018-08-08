@@ -2,16 +2,19 @@ use super::*;
 use std::sync::Arc;
 use spin::Mutex;
 
+/// Manages appending to a Stream's tail segment.
 pub struct SegmentWriter {
     last_id: StreamID,
 
     /// ID of the segment is the min StreamID available within it.
     segment_id: StreamID,
+    /// The current segment index.
     segment: Rc<Segment>,
     /// Active AOF.
     /// Path = {root_dir}/stream_id/0.dat
-    /// Thread Safe
+    /// Protected by a spin Mutex since it is shared with an I/O thread.
     aof: Option<Mutex<Arc<aof::AOF>>>,
+    /// The last pack of the segment. New writes go here.
     tail: Rc<Pack>,
 
     next_segment: Rc<Segment>,
@@ -29,6 +32,13 @@ pub struct SegmentWriter {
     /// Number of bytes to try to keep segment files within.
     seg_max: u32,
 
+    /// Simple optimization to balance performance with memory usage.
+    /// For new streams or streams that are very sparse, we can be very
+    /// conservative and only allocate the minimum required. However, for
+    /// streams that write lots of data it makes more sense to match the
+    /// "pack_min" with the "pack_max" resulting in only a single malloc
+    /// per pack.
+    pack_min: u32,
     /// Number of bytes to try to keep packs within. The larger the pack,
     /// the more compressible it could be and more records will be able
     /// to fit. A pack is the minimum sized memory allocation possible
@@ -57,5 +67,15 @@ impl SegmentWriter {
         // Once a file is name is changed it is guaranteed to be complete and correct.
         // If a crash happens then only the "0.dat" file in each stream needs
         // to be recovered.
+    }
+
+    /// After a crash or restart we need to figure out what the state
+    /// of affairs is and fix up any issues.
+    pub fn recover(&mut self) {
+
+    }
+
+    pub fn append_file(&mut self, lp_write: listpack::WriteResult) {
+
     }
 }

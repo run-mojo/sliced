@@ -29,25 +29,21 @@
 //#[macro_use]
 //extern crate dlopen_derive;
 
-//#[cfg(feature = "no_std")]
-extern crate spin;
-#[cfg(unix)]
-extern crate libc;
-#[cfg(unix)]
-extern crate nix;
-//#[cfg(not(feature = "no_std"))]
-//extern crate std;
-
-#[cfg(windows)]
-extern crate winapi;
-#[cfg(target_os = "windows")]
-extern crate kernel32;
-
 #[macro_use]
 extern crate bitflags;
+#[cfg(target_os = "windows")]
+extern crate kernel32;
 #[macro_use]
 extern crate lazy_static;
+#[cfg(unix)]
+extern crate libc;
+#[macro_use]
+extern crate smallvec;
+//#[cfg(feature = "no_std")]
+extern crate spin;
 extern crate time;
+#[cfg(windows)]
+extern crate winapi;
 
 //use dlopen::wrapper::{Container, WrapperApi};
 use self::redis::api;
@@ -67,13 +63,12 @@ pub mod types;
 pub mod alloc;
 pub mod stream;
 
-/// Module name and version
-//const MODULE_NAME: &'static str = "slice/d";
-//const MODULE_VERSION: libc::c_int = 1;
-
 #[global_allocator]
+/// Use RedisModule_Alloc/Realloc/Free for heap memory management.
+/// It's essential that RedisModule_OnLoad be created in C which
+/// makes the RedisModule_Init call at which point we can set the
+/// global static functions before Rust gets initialized.
 static GLOBAL: alloc::RedisAllocator = alloc::RedisAllocator;
-
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -83,7 +78,7 @@ extern "C" fn sliced_on_keyspace_event(
     event: *mut u8,
     key: *mut api::RedisModuleString,
 ) -> libc::c_int {
-    println!("keyspace_event");
+    println!("keyspace_event: {}", rtype);
     return 1;
 }
 
@@ -96,16 +91,14 @@ pub extern "C" fn RedisModule_DoLoad(
     argv: *mut *mut api::RedisModuleString,
     argc: libc::c_int,
 ) -> api::Status {
-    // if api::init(
-    //     ctx,
-    //     format!("{}\0", MODULE_NAME).as_ptr(),
-    //     MODULE_VERSION,
-    //     api::REDISMODULE_APIVER_1,
-    // ) == api::Status::Err {
-    //     return api::Status::Err;
-    // }
-
     unsafe {
+        // Bind SDS allocator.
+        redis::sds::set_allocator(
+            api::redis_malloc,
+            api::redis_realloc,
+            api::redis_free,
+        );
+
         // Bind allocator to the RedisModule allocator.
         redis::rax::set_allocator(
             api::redis_malloc,
@@ -113,12 +106,6 @@ pub extern "C" fn RedisModule_DoLoad(
             api::redis_free,
         );
     }
-
-    let redis = redis::Redis { ctx };
-
-    let timer_id = redis.run(move || {
-        println!("timer tick");
-    });
 
     /**********************************************************************/
     // Intercept all commands
@@ -131,9 +118,6 @@ pub extern "C" fn RedisModule_DoLoad(
         return api::Status::Err;
     }
 
-    let listpack = redis::listpack::Listpack::new();
-    let len = listpack.len();
-
     /**********************************************************************/
     // Load DataTypes
     /**********************************************************************/
@@ -143,11 +127,16 @@ pub extern "C" fn RedisModule_DoLoad(
         return api::Status::Err;
     }
 
+    // Stream Data Type
+    if stream::data_type::load(ctx) == api::Status::Err {
+        return api::Status::Err;
+    }
+
     /**********************************************************************/
     // Load Commands
     /**********************************************************************/
 
-    // Load throttle commands
+    // Load version commands
     if cmd::version::load(ctx, argv, argc) == api::Status::Err {
         return api::Status::Err;
     }
@@ -161,17 +150,6 @@ pub extern "C" fn RedisModule_DoLoad(
     if cmd::stream::load(ctx, argv, argc) == api::Status::Err {
         return api::Status::Err;
     }
-
-//    let red = redis::Redis { ctx };
-    std::thread::spawn(|| {
-//        actix::System::run(|| {
-//            let addr = bg::Bg { redis: redis::Redis { ctx: unsafe { CTX } } }.start();
-//
-//            addr.do_send(bg::stream::Load);
-//
-//            println!("started background system");
-//        });
-    });
 
     println!("slice/d module loaded... Happy slicing!");
     api::Status::Ok

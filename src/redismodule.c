@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "redismodule.h"
 #include <stdlib.h>
 

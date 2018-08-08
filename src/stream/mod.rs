@@ -4,10 +4,12 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic;
+use std::ptr;
 
 use spin::Mutex;
 
 use ::alloc::{alloc, free, ref_counted};
+use ::redis::listpack;
 use ::redis::listpack::Listpack;
 use ::redis::rax::{RaxMap, RaxRcMap};
 use ::redis::sds::SDS;
@@ -48,6 +50,7 @@ pub enum StreamError {
     OutOfMemory,
     Exists,
     WouldBlock,
+    BadInput,
 
     Generic(String),
 }
@@ -71,6 +74,7 @@ impl Error for StreamError {
             StreamError::OutOfMemory => "Out of Memory",
             StreamError::Exists => "Exists",
             StreamError::WouldBlock => "Would Block",
+            StreamError::BadInput => "Bad input",
             StreamError::Generic(ref m) => "",
             _ => "Error"
         }
@@ -201,8 +205,6 @@ pub struct Segment {
 
 impl Segment {
     pub fn would_block(&mut self, pack: &mut Pack) -> bool {
-        use std::ptr;
-
         // Is the pack already loaded?
         if pack.data.is_some() {
             return false
@@ -211,6 +213,9 @@ impl Segment {
         match self.data {
             Some(ref mmap) => {
                 if mmap.is_resident(pack.offset as usize, pack.length as usize) {
+//                    unsafe {
+//                        match pack.load_segment_data(mmap.as_mut_ptr().offset(pack.offset as isize)) {}
+//                    }
                     // mincore() optimization
                     // If the OS pages required to load the Pack are resident in-memory,
                     // then do load operation immediately since it won't block.
@@ -251,7 +256,11 @@ impl Drop for Segment {
 /// Packs can be pinned in memory to guarantee faults will not occur. This
 /// is particulary important for Consumer Groups since it does not copy the
 /// data for it's NACK struct in it's pending entries list (pel).
+#[repr(packed)]
 pub struct Pack {
+    /// Keep a reference to it's parent segment to ensure the segment structure
+    /// remains in memory for the lifetime of the pack.
+    segment: Option<Rc<Segment>>,
     /// Offset within segment file.
     offset: u32,
     /// Number of total bytes of the listpack including it's header.
@@ -265,9 +274,6 @@ pub struct Pack {
     /// The actual content in Redis Streams listpack format.
     /// These represent a Rax node.
     data: Option<Listpack>,
-    /// Keep a reference it's parent segment to ensure the segment structure
-    /// remains in memory for the lifetime of the pack.
-    segment: Option<Rc<Segment>>,
 }
 
 impl Drop for Pack {
@@ -279,6 +285,31 @@ impl Drop for Pack {
 
         // Debug
         println!("dropped Pack Data");
+    }
+}
+
+impl Pack {
+    pub fn load_segment_data(&mut self, file_lp: *mut u8) -> Result<(), StreamError> {
+        // Allocate listpack with room for the header.
+        let lp = alloc(self.length as usize + listpack::HDR_USIZE);
+        if lp.is_null() {
+            return Err(StreamError::OutOfMemory);
+        }
+
+        unsafe {
+            ptr::copy_nonoverlapping(
+                file_lp,
+                // Copy to right past header.
+                lp.offset(listpack::HDR_SIZE),
+                self.length as usize
+            );
+        }
+        // Set raw header.
+        listpack::set_total_bytes(lp, self.length as u32 + listpack::HDR_USIZE as u32);
+        listpack::set_num_elements(lp, self.count);
+
+        self.data = Some(Listpack::from_raw(lp));
+        Ok(())
     }
 }
 
@@ -301,12 +332,7 @@ struct ConsumerGroup {
     pending: RaxMap<StreamID, NACK>,
 
     /// Reserve the
-    pins: Vec<Pin>,
-}
-
-pub struct Cursor {
-    rev: bool,
-    pins: Vec<Pin>,
+    pins: Vec<Rc<Pack>>,
 }
 
 /// Pending (not yet acknowledged) message in a consumer group.
@@ -314,10 +340,12 @@ struct NACK {
     delivery_time: u64,
     delivery_count: u64,
     consumer: Rc<Consumer>,
-    dupe: SDS,
+    dupe: Option<SDS>,
 }
 
-struct Consumer {}
+struct Consumer {
+    pending: RaxMap<StreamID, NACK>,
+}
 
 
 /// In charge of creating, reading, writing and archiving segment data.

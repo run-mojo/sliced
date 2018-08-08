@@ -10,6 +10,13 @@
 #include "sds.h"
 #include "sdsalloc.h"
 
+// init with libc malloc
+void* (*s_malloc)(size_t) = malloc;
+// init with libc realloc
+void* (*s_realloc)(void*,size_t) = realloc;
+// init with libc free
+void (*s_free)(void*) = free;
+
 //static int SDS_HDR5_SIZE = SDS_HDR(sdshdr5);
 
 int sds_hdr_size(char type) {

@@ -7,6 +7,28 @@ use libc;
 use std;
 use std::cmp::Ordering;
 use std::fmt;
+use smallvec;
+
+/// Return the existing Rax allocator.
+pub unsafe fn allocator() -> (
+    extern "C" fn(size: usize) -> *mut u8,
+    extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8,
+    extern "C" fn(ptr: *mut u8)) {
+    (s_malloc, s_realloc, s_free)
+}
+
+/// Rax internally makes calls to "malloc", "realloc" and "free" for all of it's
+/// heap memory needs. These calls can be patched with the supplied hooks.
+/// Do not call this method after Rax has been used at all. This must
+/// be called before using or calling any other Rax API function.
+pub unsafe fn set_allocator(
+    malloc: extern "C" fn(size: usize) -> *mut u8,
+    realloc: extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8,
+    free: extern "C" fn(ptr: *mut u8)) {
+    s_malloc = malloc;
+    s_realloc = realloc;
+    s_free = free;
+}
 
 const SDS_TYPE_5: libc::c_char = 0;
 const SDS_TYPE_8: libc::c_char = 1;
@@ -18,6 +40,21 @@ const SDS_TYPE_MASK: libc::c_int = 7;
 const SDS_TYPE_BITS: libc::c_int = 3;
 
 pub type Sds = *mut libc::c_char;
+
+#[repr(C)]
+/// Same as SDS except it won't cleanup any memory.
+/// Should only be used as a facade around an SDS
+/// be managed internally by Redis. It's also essential
+/// that the allocation not be messed with.
+pub struct ImmutableSDS(pub Sds);
+
+impl SDSRead for ImmutableSDS {
+    #[inline]
+    fn inner(&self) -> *mut libc::c_char {
+        self.0
+    }
+}
+
 
 #[derive(Eq, Debug)]
 #[repr(C)]
@@ -75,6 +112,82 @@ impl fmt::Display for SDS {
 impl Drop for SDS {
     fn drop(&mut self) {
         free(self.0)
+    }
+}
+
+pub trait SDSRead {
+    fn inner(&self) -> Sds;
+
+    #[inline]
+    fn len(&self) -> usize {
+        get_len(self.inner())
+    }
+
+    #[inline]
+    fn as_ptr(&self) -> *const u8 {
+        self.inner() as *const u8
+    }
+
+    #[inline]
+    fn avail(&self) -> usize {
+        avail(self.inner())
+    }
+
+    #[inline]
+    fn hdr_size(&self) -> libc::c_int {
+        hdr_size(self.inner())
+    }
+
+    /// Return the total size of the allocation of the specified sds string,
+    /// including:
+    /// 1) The sds header before the pointer.
+    /// 2) The string.
+    /// 3) The free buffer at the end if any.
+    /// 4) The implicit null term.
+    #[inline]
+    fn alloc_size(&self) -> usize {
+        alloc_size(self.inner())
+    }
+
+    /// Return the pointer of the actual SDS allocation (normally SDS strings
+    /// are referenced by the start of the string buffer).
+    #[inline]
+    fn alloc_ptr(&self) -> *mut libc::c_void {
+        alloc_ptr(self.inner())
+    }
+
+
+    #[inline]
+    fn lower(&mut self) {
+        to_lower(self.inner())
+    }
+
+    #[inline]
+    fn upper(&mut self) {
+        to_upper(self.inner())
+    }
+
+    #[inline]
+    fn to_str<'a>(&self) -> &'a str {
+        unsafe {
+            std::str::from_utf8(
+                std::slice::from_raw_parts(
+                    self.inner() as *const u8,
+                    self.len())
+            ).unwrap()
+        }
+    }
+
+    #[inline]
+    fn sds_type(&self) -> libc::c_int {
+        get_type(self.inner())
+    }
+}
+
+impl SDSRead for SDS {
+    #[inline]
+    fn inner(&self) -> *mut libc::c_char {
+        self.0
     }
 }
 
@@ -421,10 +534,31 @@ pub fn hdr_size(s: Sds) -> libc::c_int {
     unsafe { sds_get_hdr_size(s) }
 }
 
+#[inline]
+pub fn to_int64(s: Sds) -> Option<i64> {
+    unsafe {
+        let mut value: i64 = 0;
+        if string2ll(s, get_len(s), &mut value) == 0 {
+            None
+        } else {
+            Some(value)
+        }
+    }
+}
+
 #[link(name = "redismodule", kind = "static")]
 extern "C" {
     #[no_mangle]
     pub static SDS_NOINIT: *mut libc::c_char;
+
+    #[no_mangle]
+    pub static mut s_malloc: extern "C" fn(size: usize) -> *mut u8;
+    #[no_mangle]
+    pub static mut s_realloc: extern "C" fn(ptr: *mut u8, size: usize) -> *mut u8;
+    #[no_mangle]
+    pub static mut s_free: extern "C" fn(ptr: *mut u8);
+
+    pub fn string2ll(s: *mut libc::c_char, len: libc::size_t, value: *mut libc::c_longlong) -> libc::c_int;
 
     pub fn sdsnewlen(init: *const u8, initlen: libc::size_t) -> Sds;
 

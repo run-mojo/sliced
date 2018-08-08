@@ -2,9 +2,10 @@
 use std::ptr;
 use std::marker;
 use std::mem;
+use std::rc::Rc;
+
 use libc;
 
-use std::rc::Rc;
 use ::redis::rax::*;
 use super::id::StreamID;
 
@@ -17,8 +18,7 @@ pub struct StreamIDMap<V> {
 #[allow(non_camel_case_types)]
 extern "C" fn Sliced_StreamMap_FreeCallback<V>(v: *mut libc::c_void) {
     unsafe {
-        // Re-box it so it can drop it immediately after it leaves this scope.
-//        Box::from_raw(v as *mut V);
+        // Decrement strong ref count
         Rc::from_raw(v as *const V);
     }
 }

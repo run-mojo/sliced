@@ -44,7 +44,8 @@ use std::rc;
 pub const EMPTY: &'static [u8] = &[];
 
 /// Listpacks are composed of elements that are either an derivative of a
-/// 64bit integer or a string blob.
+/// 64bit integer or a string blob. Note that the String type is pointing
+/// to memory it does not own.
 pub enum Value {
     Int(i64),
     String(*const u8, u32),
@@ -61,7 +62,6 @@ pub enum Placement {
     After = 1,
 }
 
-
 pub struct Listpack(listpack);
 
 unsafe impl Send for Listpack {}
@@ -72,6 +72,7 @@ impl Listpack {
     pub fn from_raw(lp: *mut u8) -> Listpack {
         Listpack(lp)
     }
+
     pub fn new() -> Listpack {
         unsafe { Listpack(new(ALLOCATOR)) }
     }
@@ -484,7 +485,7 @@ pub const MAX_ENTRY_BACKLEN: u64 = 34359738367;
 pub const EOF: u8 = 0xFF;
 
 
-const HDR_USIZE: usize = 6;
+pub const HDR_USIZE: usize = 6;
 const MAX_INT_ENCODING_LEN: usize = 9;
 const HDR_NUMELE_UNKNOWN_ISIZE: isize = u16::max_value() as isize;
 
@@ -619,6 +620,38 @@ pub fn set_num_elements(p: *mut u8, v: u16) {
     unsafe {
         *p.offset(4) = (v & 0xff) as u8;
         *p.offset(5) = (v >> 8 & 0xff) as u8;
+    }
+}
+
+impl Into<Value> for super::sds::Sds {
+    #[inline]
+    fn into(self) -> Value {
+        sds_to_value(self)
+    }
+}
+
+#[inline]
+pub fn sds_to_value(mut s: super::sds::Sds) -> Value {
+    unsafe {
+        let mut value: i64 = 0;
+        let size = super::sds::get_len(s);
+        if super::sds::string2ll(s, size, (&mut value) as *mut i64) == 0 {
+            Value::String(s as *const u8, size as u32)
+        } else {
+            Value::Int(value)
+        }
+    }
+}
+
+#[inline]
+pub fn parse_raw(mut p: *const u8, size: usize) -> Value {
+    unsafe {
+        let mut value: i64 = 0;
+        if super::sds::string2ll(p as *mut i8, size, (&mut value) as *mut i64) == 0 {
+            Value::String(p as *const u8, size as u32)
+        } else {
+            Value::Int(value)
+        }
     }
 }
 
@@ -1950,6 +1983,60 @@ pub fn append_val<'a, 'b, A>(
         set_total_bytes(lp, new_listpack_bytes);
 
         (v, Some(lp))
+    }
+}
+
+#[repr(packed)]
+/// The pointer to the new listpack and the element and length of the
+/// bytes that were written.
+pub struct WriteResult(Option<listpack>, *mut u8, u32);
+
+///
+#[inline]
+pub fn append_write<'a, 'b, A>(
+    allocator: &'a A,
+    mut lp: listpack,
+    lp_size: u32,
+    layout_size: u32,
+    v: &'b Value,
+) -> WriteResult
+    where A: Allocator {
+    unsafe {
+        let encoded_size = v.size_for_write();
+
+        // Calculate the old and new sizes.
+        let new_listpack_bytes = lp_size + encoded_size;
+        if new_listpack_bytes > layout_size {
+            if new_listpack_bytes > u32::max_value() {
+                return WriteResult(None, ptr::null_mut(), 0);
+            }
+            // realloc to make room
+            lp = allocator.realloc(lp, new_listpack_bytes as usize);
+            if lp.is_null() {
+                return WriteResult(None, ptr::null_mut(), 0);
+            }
+        }
+
+        // Locate EOF marker.
+        let p = lp.offset(lp_size as isize - 1);
+
+        // Write value.
+        // This overwrites the EOF byte at the end which will get added
+        // immediately after this new value.
+        v.encode(p, encoded_size);
+
+        // Write EOF
+        *lp.offset(new_listpack_bytes as isize - 1) = EOF;
+
+        // Update header
+        let num_elements = get_num_elements(lp);
+        if num_elements != HDR_NUMELE_UNKNOWN {
+            set_num_elements(lp, num_elements + 1);
+        }
+        set_total_bytes(lp, new_listpack_bytes);
+
+        // Note this does not include the EOF byte.
+        WriteResult(Some(lp), p, encoded_size)
     }
 }
 

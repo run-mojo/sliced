@@ -161,7 +161,21 @@ pub struct RedisModuleKey;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub struct RedisModuleString;
+pub struct RedisModuleString {
+    header: u32,
+    refcount: i32,
+    ptr: *mut u8,
+}
+
+impl RedisModuleString {
+    pub fn len(&self) -> usize {
+        ::redis::sds::get_len(self.ptr as *mut _ as *mut libc::c_char)
+    }
+
+    pub fn as_sds(&self) -> ::redis::sds::SDS {
+        unsafe { ::redis::sds::SDS(self.ptr as *mut _ as *mut libc::c_char) }
+    }
+}
 
 #[derive(Clone, Copy)]
 #[repr(C)]
