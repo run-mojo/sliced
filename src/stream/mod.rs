@@ -49,8 +49,10 @@ pub const DEFAULT_CONFIG: &'static StreamConfig = &StreamConfig {
 pub enum StreamError {
     OutOfMemory,
     Exists,
+    NotExists,
     WouldBlock,
     BadInput,
+    Overflow,
 
     Generic(String),
 }
@@ -72,9 +74,11 @@ impl Error for StreamError {
     fn description(&self) -> &str {
         match *self {
             StreamError::OutOfMemory => "Out of Memory",
-            StreamError::Exists => "Exists",
-            StreamError::WouldBlock => "Would Block",
-            StreamError::BadInput => "Bad input",
+            StreamError::Exists => "exists",
+            StreamError::NotExists => "not exists",
+            StreamError::WouldBlock => "would block",
+            StreamError::BadInput => "bad input",
+            StreamError::Overflow => "overflow",
             StreamError::Generic(ref m) => "",
             _ => "Error"
         }
@@ -234,7 +238,7 @@ impl Segment {
                     ::redis::listpack::set_total_bytes(lp, pack.length as u32 + 6u32);
                     ::redis::listpack::set_num_elements(lp, pack.count);
 
-                    pack.data = Some(Listpack::from_raw(lp));
+//                    pack.data = Some(Listpack::from_raw(lp));
                     false
                 } else {
                     true
@@ -273,7 +277,7 @@ pub struct Pack {
     count: u16,
     /// The actual content in Redis Streams listpack format.
     /// These represent a Rax node.
-    data: Option<Listpack>,
+    data: Option<record::PackData>,
 }
 
 impl Drop for Pack {
@@ -289,28 +293,38 @@ impl Drop for Pack {
 }
 
 impl Pack {
-    pub fn load_segment_data(&mut self, file_lp: *mut u8) -> Result<(), StreamError> {
-        // Allocate listpack with room for the header.
-        let lp = alloc(self.length as usize + listpack::HDR_USIZE);
-        if lp.is_null() {
-            return Err(StreamError::OutOfMemory);
+    pub fn new() -> Pack {
+        Pack {
+            segment: None,
+            offset: 0,
+            length: 0,
+            count: 0,
+            data: None,
         }
-
-        unsafe {
-            ptr::copy_nonoverlapping(
-                file_lp,
-                // Copy to right past header.
-                lp.offset(listpack::HDR_SIZE),
-                self.length as usize
-            );
-        }
-        // Set raw header.
-        listpack::set_total_bytes(lp, self.length as u32 + listpack::HDR_USIZE as u32);
-        listpack::set_num_elements(lp, self.count);
-
-        self.data = Some(Listpack::from_raw(lp));
-        Ok(())
     }
+
+//    pub fn load_segment_data(&mut self, file_lp: *mut u8) -> Result<(), StreamError> {
+//        // Allocate listpack with room for the header.
+//        let lp = alloc(self.length as usize + listpack::HDR_USIZE);
+//        if lp.is_null() {
+//            return Err(StreamError::OutOfMemory);
+//        }
+//
+//        unsafe {
+//            ptr::copy_nonoverlapping(
+//                file_lp,
+//                // Copy to right past header.
+//                lp.offset(listpack::HDR_SIZE),
+//                self.length as usize
+//            );
+//        }
+//        // Set raw header.
+//        listpack::set_total_bytes(lp, self.length as u32 + listpack::HDR_USIZE as u32);
+//        listpack::set_num_elements(lp, self.count);
+//
+//        self.data = Some(Listpack::from_raw(lp));
+//        Ok(())
+//    }
 }
 
 /// Leases and pins a pack of data into memory as well as

@@ -3,7 +3,7 @@ use redis::api;
 use redis::listpack::{Listpack, Value};
 use smallvec::SmallVec;
 use super::*;
-use super::id::*;
+//use super::id::*;
 
 // Redis Streams entry flags
 pub const STREAM_ITEM_FLAG_NONE: i32 = 0;               /* No special flags. */
@@ -41,28 +41,6 @@ impl<'a> Record<'a> {
     }
 }
 
-/// slice/d Consumer Groups have some standardized fields to control
-/// it's overall behavior. A naming convention is utilized over the
-/// standard Redis Streams listpack format.
-pub struct CGRecord {
-    deadline: Option<u64>,
-}
-
-impl CGRecord {
-//    pub fn parse(record: &Record) {
-//        if record.1.len() < 2 || record.1.len() % 2 != 0 {
-//            return Err(StreamError::BadInput);
-//        }
-//
-//        let mut i = 0;
-//        while let Some(key) = record.1[i] {
-//            if let Some(value) = record.1[i + 1] {} else {
-//                return Err(StreamError::BadInput);
-//            }
-//        }
-//    }
-}
-
 /// Specialized listpack data structure. Just like a listpack
 /// except it doesn't have a header in the allocation and mostly
 /// append-only.
@@ -71,13 +49,17 @@ pub struct PackData {
     /// All record IDs within listpack are delta encoded from the master
     /// except for the first record in which case it "is" the ID.
     master_id: StreamID,
-    /// Raw allocation.
-    lp: Listpack,
-//    num_fields: u16,
-//    fields: *mut u8,
-//    /// Pointer to the first record.
-//    first: *mut u8,
+    /// A standard Listpack is used.
+    lp: listpack::listpack,
+    num_fields: u16,
+    fields: *mut u8,
+    //    /// Pointer to the first record.
+    first: *mut u8,
 }
+
+unsafe impl Sync for PackData {}
+
+unsafe impl Send for PackData {}
 
 impl Drop for PackData {
     fn drop(&mut self) {
@@ -106,87 +88,7 @@ impl PackData {
 //        }
 //    }
 
-    pub fn new(min_alloc: u32, first: &Record) -> Result<PackData, StreamError> {
-        let raw_lp = alloc(min_alloc as usize);
-        if raw_lp.is_null() {
-            return Err(StreamError::OutOfMemory);
-        }
 
-        let mut lp = Listpack::from_raw(raw_lp);
-
-        /*
-         * The master entry "in-memory" layout is composed like in the following example:
-         *
-         * +-------+---------+------------+---------+--/--+---------+---------+-+
-         * | count | deleted | num-fields | field_1 | field_2 | ... | field_N |0|
-         * +-------+---------+------------+---------+--/--+---------+---------+-+
-         *
-         * The "on-disk" layout is a bit different to ensure append-only writes.
-         * Header (bytes, items), Count, Deleted are not in the on-disk representation
-         * at the same location. Instead, it's encoded to the end of the listpack
-         * between 2 EOF bytes.
-         *
-         * +----------+--------+----------+----------+---------+----------+
-         * | LP-count |   EOF  | ID (ms)  | ID (seq) |   EOF   | LP-first |
-         * +----------+--------+----------+--=-------+---------+----------+
-         *
-         * Between Packs and Index sections
-         * +--------+--------+
-         * |   EOF  |   IDX  |
-         * +--------+--------+
-         *
-         * Index Entry - After all Packs at the end of the file
-         * +----------+--------+----------+----------+---------+----------+
-         * |   (ms)   |  (seq) |  offset  |  length  |  count  |    EOF   |
-         * +----------+--------+----------+--=-------+---------+----------+
-        */
-        // count = 1
-        if !lp.append(1) {
-            return Err(StreamError::OutOfMemory);
-        }
-        // deleted = 0
-        if !lp.append(0) {
-            return Err(StreamError::OutOfMemory);
-        }
-
-//        lp = append_int(A, lp, 1).unwrap_or_else(|| return Err(StreamError::OutOfMemory)); // count = 1
-//        lp = append_int(A, lp, 0).unwrap(); // deleted = 0
-//        lp = append_int(A, lp, first.len()).unwrap(); // num_fields = 0
-//
-//
-//        // append master fields.
-//
-//        lp = append_int(A, lp, 0).unwrap(); // count = 1
-
-        Err(StreamError::OutOfMemory)
-    }
-
-    pub fn append(&mut self, record: &[(Value, Value)]) {
-        /* Populate the listpack with the new entry. We use the following
-         * encoding:
-         *
-         * +-----+--------+----------+-------+-------+-/-+-------+-------+--------+
-         * |flags|entry-id|num-fields|field-1|value-1|...|field-N|value-N|lp-count|
-         * +-----+--------+----------+-------+-------+-/-+-------+-------+--------+
-         *
-         * However if the SAMEFIELD flag is set, we have just to populate
-         * the entry with the values, so it becomes:
-         *
-         * +-----+--------+-------+-/-+-------+--------+
-         * |flags|entry-id|value-1|...|value-N|lp-count|
-         * +-----+--------+-------+-/-+-------+--------+
-         *
-         * The entry-id field is actually two separated fields: the ms
-         * and seq difference compared to the master entry.
-         *
-         * The lp-count field is a number that states the number of listpack pieces
-         * that compose the entry, so that it's possible to travel the entry
-         * in reverse order: we can just start from the end of the listpack, read
-         * the entry, and jump back N times to seek the "flags" field to read
-         * the stream full entry. */
-
-        // This part is identical to on-disk format.
-    }
 
 //    pub fn last(&self) -> Option<*mut u8> {
 //        unsafe {

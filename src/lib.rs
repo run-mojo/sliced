@@ -54,7 +54,6 @@ mod macros;
 /// Modules
 pub mod page_size;
 pub mod mmap;
-pub mod bg;
 pub mod cell;
 pub mod cmd;
 pub mod error;

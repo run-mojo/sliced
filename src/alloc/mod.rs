@@ -14,11 +14,6 @@ use std::ptr::NonNull;
 use std::string;
 use time;
 
-//pub mod rc;
-//pub mod arc;
-//pub mod raw_vec;
-//pub mod boxed;
-
 /// listpacks are contiguous chunks of memory. The "Allocator" controls the
 /// behavior and system for allocating, re-allocating, and de-allocating
 /// listpacks. All the write methods within the "raw" module deal with raw

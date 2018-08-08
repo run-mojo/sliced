@@ -20,7 +20,9 @@ const AOF_GROW_64MB: u64 = 1024 * 1024 * 64;
 /// to handle append-only with mmap'ed files where an event-loop writes
 /// directly only if it won't block.
 pub struct AOF {
-    inner: Mutex<AOFInner>
+    file: File,
+    mmap: MmapMut,
+    offset: usize,
 }
 
 impl AOF {
@@ -46,16 +48,22 @@ impl AOF {
 
         match unsafe { MmapOptions::new().map_mut(&f) } {
             Ok(map) => Ok(AOF {
-                inner: Mutex::new(AOFInner {
-                    file: f,
-                    mmap: map,
-                    offset: len,
-                    length: len,
-                    size: len,
-                })
+                file: f,
+                mmap: map,
+                offset: len as usize,
             }),
             Err(e) => Err(e)
         }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.mmap.len()
+    }
+
+    #[inline]
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 
     pub fn try_read(&self, offset: u64, buf: *mut u8, size: usize) -> IoResult<()> {
@@ -63,70 +71,66 @@ impl AOF {
         Ok(())
     }
 
-    ///
-    pub fn try_append(&self, buf: *mut u8, size: usize) -> IoResult<bool> {
-        let mut lock = self.inner.lock();
-
-        let mmap = lock.mmap.as_mut_ptr();
-        if lock.length + (size as u64) > lock.size + 1 {
-            drop(lock);
-            // Need to grow the file or use the next one.
-            return Ok(false)
-        }
-
-        unsafe {
-            // memcpy
-            ptr::copy_nonoverlapping(
-                buf as *const u8,
-                mmap.offset(lock.length as isize),
-                size
-            );
-            // Move the EOF byte to the new end.
-            *mmap.offset(lock.length as isize + 1) = listpack::EOF;
-        }
-
-        // Do not include the EOF byte so it will be overwritten.
-        lock.length = lock.length + (size as u64);
-
-        drop(lock);
-        Ok(true)
-    }
-
-    ///
-    pub fn truncate(&self, size: u64) -> IoResult<()> {
-        let mut lock = self.inner.lock();
-
-        // Truncate the file.
-        (&mut lock.file).set_len(size);
-
-        // fsync existing contents.
-        lock.mmap.flush();
-
-        // mmap the whole file.
-        match unsafe { MmapOptions::new()
-            .offset(0)
-            .len(size as usize)
-            .map_mut(&lock.file)
-        } {
-            Ok(map) => {
-                lock.mmap = map;
-                drop(lock);
-                return Ok(())
-            }
-            Err(e) => {
-                drop(lock);
-                return Err(e)
-            }
-        }
-    }
+//    ///
+//    pub fn try_append(&mut self, buf: *mut u8, size: usize) -> IoResult<bool> {
+//        let mut lock = self.inner.lock();
+//
+//        let mmap = lock.mmap.as_mut_ptr();
+//        if lock.length + (size as u64) > lock.size + 1 {
+//            drop(lock);
+//            // Need to grow the file or use the next one.
+//            return Ok(false)
+//        }
+//
+//        unsafe {
+//            // memcpy
+//            ptr::copy_nonoverlapping(
+//                buf as *const u8,
+//                mmap.offset(lock.length as isize),
+//                size
+//            );
+//            // Move the EOF byte to the new end.
+//            *mmap.offset(lock.length as isize + 1) = listpack::EOF;
+//        }
+//
+//        // Do not include the EOF byte so it will be overwritten.
+//        lock.length = lock.length + (size as u64);
+//
+//        drop(lock);
+//        Ok(true)
+//    }
+//
+//    ///
+//    pub fn truncate(&mut self, size: u64) -> IoResult<()> {
+//        let mut lock = self.inner.lock();
+//
+//        // Truncate the file.
+//        (&mut lock.file).set_len(size);
+//
+//        // fsync existing contents.
+//        lock.mmap.flush();
+//
+//        // mmap the whole file.
+//        match unsafe { MmapOptions::new()
+//            .offset(0)
+//            .len(size as usize)
+//            .map_mut(&lock.file)
+//        } {
+//            Ok(map) => {
+//                lock.mmap = map;
+//                drop(lock);
+//                return Ok(())
+//            }
+//            Err(e) => {
+//                drop(lock);
+//                return Err(e)
+//            }
+//        }
+//    }
 }
 
 struct AOFInner {
     file: File,
     mmap: MmapMut,
-    /// The logical tail of the file is mlock'ed into memory to allow
-    /// writes directly from an event-loop.
     offset: u64,
-    length: u64,
-    size: u64,
 }

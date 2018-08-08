@@ -38,8 +38,11 @@ use ::alloc::*;
 use std;
 use std::alloc::*;
 use std::mem::size_of;
+use std::mem;
 use std::ptr;
 use std::rc;
+
+use libc;
 
 pub const EMPTY: &'static [u8] = &[];
 
@@ -47,8 +50,37 @@ pub const EMPTY: &'static [u8] = &[];
 /// 64bit integer or a string blob. Note that the String type is pointing
 /// to memory it does not own.
 pub enum Value {
+    ///
     Int(i64),
+    ///
     String(*const u8, u32),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Value) -> bool {
+        match *self {
+            Value::Int(v) => match *other {
+                Value::Int(v2) => v == v2,
+                _ => false
+            },
+            Value::String(p, size) => match *other {
+                Value::String(p2, size2) => {
+                    if size != size2 {
+                        false
+                    } else {
+                        unsafe {
+                            libc::memcmp(
+                                p as *mut libc::c_void,
+                                p2 as *mut libc::c_void,
+                                size as libc::size_t
+                            ) == 0
+                        }
+                    }
+                }
+                _ => false
+            }
+        }
+    }
 }
 
 pub type listpack = *mut u8;
@@ -1877,8 +1909,8 @@ pub fn replace_signed_int<'a, A, I>(
 
 ///
 #[inline]
-pub fn replace_string<'a, A, S>(
-    allocator: &'a A,
+pub fn replace_string<A, S>(
+    allocator: &A,
     mut lp: listpack,
     mut p: element,
     mut v: S,
@@ -1896,8 +1928,8 @@ pub fn replace_string<'a, A, S>(
 
 ///
 #[inline]
-pub fn append<'a, A>(
-    allocator: &'a A,
+pub fn append<A>(
+    allocator: &A,
     mut lp: listpack,
     v: Value,
 ) -> Option<listpack>
@@ -1991,14 +2023,70 @@ pub fn append_val<'a, 'b, A>(
 /// bytes that were written.
 pub struct WriteResult(Option<listpack>, *mut u8, u32);
 
+#[inline]
+/// Reverts a listpack back to a marker without resizing the actual allocation.
+pub fn revert(mut lp: listpack, size: u32, count: u16) {
+    set_total_bytes(lp, size);
+    set_num_elements(lp, count);
+    unsafe { *lp.offset((size - 1) as isize) = EOF; }
+}
+
 ///
 #[inline]
-pub fn append_write<'a, 'b, A>(
-    allocator: &'a A,
+pub fn append_writes<A>(
     mut lp: listpack,
     lp_size: u32,
     layout_size: u32,
-    v: &'b Value,
+    v: &Value,
+) -> WriteResult
+    where A: Allocator {
+    unsafe {
+        let encoded_size = v.size_for_write();
+
+        // Calculate the old and new sizes.
+        let new_listpack_bytes = lp_size + encoded_size;
+        if new_listpack_bytes > layout_size {
+            if new_listpack_bytes > u32::max_value() {
+                return WriteResult(None, ptr::null_mut(), 0);
+            }
+            // realloc to make room
+            lp = ::alloc::realloc(lp, new_listpack_bytes as usize);
+            if lp.is_null() {
+                return WriteResult(None, ptr::null_mut(), 0);
+            }
+        }
+
+        // Locate EOF marker.
+        let p = lp.offset(lp_size as isize - 1);
+
+        // Write value.
+        // This overwrites the EOF byte at the end which will get added
+        // immediately after this new value.
+        v.encode(p, encoded_size);
+
+        // Write EOF
+        *lp.offset(new_listpack_bytes as isize - 1) = EOF;
+
+        // Update header
+        let num_elements = get_num_elements(lp);
+        if num_elements != HDR_NUMELE_UNKNOWN {
+            set_num_elements(lp, num_elements + 1);
+        }
+        set_total_bytes(lp, new_listpack_bytes);
+
+        // Note this does not include the EOF byte.
+        WriteResult(Some(lp), p, encoded_size)
+    }
+}
+
+///
+#[inline]
+pub fn append_write<A>(
+    allocator: &A,
+    mut lp: listpack,
+    lp_size: u32,
+    layout_size: u32,
+    v: &Value,
 ) -> WriteResult
     where A: Allocator {
     unsafe {
