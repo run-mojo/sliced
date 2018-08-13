@@ -1,8 +1,8 @@
 use super::id::StreamID;
-use ::redis::listpack::*;
-use ::alloc::*;
-use ::redis::rax::*;
-use ::redis::sds::*;
+use crate::redis::listpack::*;
+use crate::alloc::*;
+use crate::redis::rax::*;
+use crate::redis::sds::*;
 use std::mem;
 use std::ptr;
 pub const LP_INTBUF_SIZE: usize = 21;

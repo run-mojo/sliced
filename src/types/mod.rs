@@ -1,6 +1,6 @@
 extern crate libc;
 
-use redis::api;
+use crate::redis::api;
 
 #[allow(unused_variables)]
 pub struct DataTypes {

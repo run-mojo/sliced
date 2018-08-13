@@ -1,7 +1,7 @@
 extern crate time;
 
-use error::SlicedError;
-use redis;
+use crate::error::SlicedError;
+use crate::redis;
 use std::collections::HashMap;
 
 /// Store exposes the atomic data store operations that the GCRA rate limiter
@@ -198,7 +198,7 @@ impl<'a> Store for InternalRedisStore<'a> {
 mod tests {
     extern crate time;
 
-    use cell::store::*;
+    use crate::cell::store::*;
 
     #[test]
     fn it_performs_compare_and_swap_with_ttl() {

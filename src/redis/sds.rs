@@ -607,7 +607,7 @@ extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use redis::sds::*;
+    use crate::redis::sds::*;
     use std::cmp::Ordering;
 
     #[test]

@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use libc;
 
-use ::redis::rax::*;
+use crate::redis::rax::*;
 use super::id::StreamID;
 
 pub struct StreamIDMap<V> {

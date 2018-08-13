@@ -1,6 +1,7 @@
 //extern crate libc;
 
-use error::SlicedError;
+use crate::error::SlicedError;
+
 use libc;
 use std::error::Error;
 use std::iter;
@@ -8,7 +9,7 @@ use std::ptr;
 use std::string;
 use time;
 
-use redis::sds::SDSRead;
+use crate::redis::sds::SDSRead;
 
 use smallvec::SmallVec;
 
@@ -258,7 +259,7 @@ impl Redis {
                 terminated_args[3].str_inner,
             ),
             _ => return Err(SlicedError::Generic(
-                ::error::GenericError::new("Can't support that many CALL arguments")
+                crate::error::GenericError::new("Can't support that many CALL arguments")
             )),
         };
 
@@ -606,6 +607,25 @@ pub fn parse_args(
         let ptr = api::string_ptr_len(redis_str, &mut size as *mut libc::size_t);
         // Parse the SDS string and automatically coerce integers.
         args.push(listpack::parse_raw(ptr, size));
+    }
+    args
+}
+
+/// Parses the args into MemoizedValues while coercing integers when detected.
+/// The resulting Vector is allocated on the stack if 32 or fewer elements.
+/// No copying takes place except for integer coercion which converts a c-str
+/// to an 'i64'. The values must not outlive the RedisModuleString instances.
+pub fn parse_args_for_write(
+    argv: *mut *mut api::RedisModuleString,
+    argc: libc::c_int,
+) -> SmallVec<[listpack::MemoizedValue;32]> {
+    let mut args: SmallVec<[_;32]> = SmallVec::with_capacity(argc as usize);
+    for i in 0..argc {
+        let redis_str = unsafe { *argv.offset(i as isize) };
+        let mut size: libc::size_t = 0;
+        let ptr = api::string_ptr_len(redis_str, &mut size as *mut libc::size_t);
+        // Parse the SDS string and automatically coerce integers.
+        args.push(listpack::MemoizedValue::new(listpack::parse_raw(ptr, size)));
     }
     args
 }

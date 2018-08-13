@@ -1,12 +1,12 @@
-use std::fs::{File};
-use std::path::Path;
+use crate::mmap::{Mmap, MmapMut, MmapOptions};
+use crate::redis::listpack;
+use spin::Mutex;
+use std::fs::File;
 use std::io;
 use std::io::Error as IoError;
 use std::io::Result as IoResult;
+use std::path::Path;
 use std::ptr;
-use ::mmap::{Mmap, MmapMut, MmapOptions};
-use ::redis::listpack;
-use spin::Mutex;
 
 const AOF_GROW_1MB: u64 = 1024 * 1024;
 const AOF_GROW_2MB: u64 = 1024 * 1024 * 2;
@@ -37,7 +37,7 @@ impl AOF {
             _ => {
                 // Let's not allow shrinking here.
                 if len > size {
-                    return Err(IoError::from(io::ErrorKind::UnexpectedEof))
+                    return Err(IoError::from(io::ErrorKind::UnexpectedEof));
                 }
                 match f.set_len(size) {
                     Err(e) => return Err(e),
@@ -67,7 +67,6 @@ impl AOF {
     }
 
     pub fn try_read(&self, offset: u64, buf: *mut u8, size: usize) -> IoResult<()> {
-
         Ok(())
     }
 

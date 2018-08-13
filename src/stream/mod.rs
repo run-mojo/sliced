@@ -1,20 +1,18 @@
-use std::sync::{Arc, Weak as ArcWeak};
-use std::rc::{Rc, Weak};
+use crate::alloc::{alloc, dealloc, free, realloc, ref_counted};
+use crate::redis::listpack;
+use crate::redis::listpack::Listpack;
+use crate::redis::rax::{RaxMap, RaxRcMap};
+use crate::redis::sds::SDS;
+
+use spin::Mutex;
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
-use std::sync::atomic;
 use std::ptr;
+use std::rc::{Rc, Weak};
+use std::sync::{Arc, Weak as ArcWeak};
+use std::sync::atomic;
 
-use spin::Mutex;
-
-use ::alloc::{alloc, free, ref_counted};
-use ::redis::listpack;
-use ::redis::listpack::Listpack;
-use ::redis::rax::{RaxMap, RaxRcMap};
-use ::redis::sds::SDS;
-
-use self::id::{next_id, StreamID};
 
 pub mod id;
 pub mod map;
@@ -22,8 +20,10 @@ pub mod raw;
 pub mod aof;
 pub mod record;
 pub mod writer;
-pub mod segment;
+pub mod io;
 pub mod data_type;
+
+use self::id::{next_id, StreamID};
 
 pub const DEFAULT_PACK_SIZE: u32 = 65500;
 // ~64KB
@@ -32,6 +32,11 @@ pub const DEFAULT_SEGMENT_SIZE: u32 = 1024 * 1024 * 64 - 64; // ~64MB
 pub const COMPRESS_NONE: i32 = 0;
 pub const COMPRESS_LZ4: i32 = 1;
 pub const COMPRESS_ZSTD: i32 = 2;
+
+pub static mut DEFAULT_MAX_IO_BACKLOG: usize = 25000;
+pub fn max_io_backlog() -> usize {
+    unsafe { DEFAULT_MAX_IO_BACKLOG }
+}
 
 pub struct StreamConfig {
     pub max_pack_size: u32,
@@ -53,7 +58,9 @@ pub enum StreamError {
     WouldBlock,
     BadInput,
     Overflow,
-
+    CreateDir(String),
+    NotDir(String),
+    ReadDir(String),
     Generic(String),
 }
 
@@ -73,12 +80,15 @@ impl fmt::Display for StreamError {
 impl Error for StreamError {
     fn description(&self) -> &str {
         match *self {
-            StreamError::OutOfMemory => "Out of Memory",
+            StreamError::OutOfMemory => "out of memory",
             StreamError::Exists => "exists",
             StreamError::NotExists => "not exists",
             StreamError::WouldBlock => "would block",
             StreamError::BadInput => "bad input",
             StreamError::Overflow => "overflow",
+            StreamError::CreateDir(ref d) => "create directory",
+            StreamError::NotDir(ref d) => "not directory",
+            StreamError::ReadDir(ref d) => "read directory failed",
             StreamError::Generic(ref m) => "",
             _ => "Error"
         }
@@ -97,7 +107,7 @@ impl Error for StreamError {
 /// kept intact which allows for very efficient interop with Redis Streams.
 ///
 /// The I/O strategy makes generous use of memory mapped append-only files (AOF).
-/// The last segment "tail" is always the file being appended to. The strategy
+/// The last segment "tail" is the "only" file being appended to. This implementation
 /// allows for writes to happen from the Redis event-loop when it's determined
 /// to be non-blocking and is just a memcpy. A background I/O thread is utilized
 /// for all blocking I/O operations including Creation, Truncation, Sync / Flushing,
@@ -109,7 +119,7 @@ impl Error for StreamError {
 /// at RAM speeds which is inline with Redis' core tenants. Memory is allocated
 /// using Redis Module memory management functions "RedisModule_Alloc",
 /// "RedisModule_Realloc", and "RedisModule_Free". Redis MEMORY commands will include
-/// memory allocated for slice/d Streams. That will NOT include the "on-disk" usage.
+/// memory allocated for slice/d Streams. It will NOT include the "on-disk" usage.
 /// That is represented within some slice/d management commands.
 ///
 /// A "max-memory" variable may be set and slice/d will try to keep the collective
@@ -120,7 +130,7 @@ impl Error for StreamError {
 /// segment, then the segment file handle and pack index is freed as well.
 ///
 /// slice/d utilizes the OS kernel for handling "sequential read-ahead" and will
-/// take advantage of a technique the author describes as "non-blocking faulting"
+/// take advantage of an optimization best described as "non-blocking faulting"
 /// which checks with the kernel if a Pack's on-disk pages are loaded in memory and
 /// will save a background I/O request. Furthermore, since the data is shared among
 /// all clients and consumers, they get a free lunch as well. Most consumers will be
@@ -156,7 +166,7 @@ pub struct Stream {
     segments: map::StreamIDMap<Segment>,
 
     /// Each stream has a single writer which has the tail segment.
-    writer: Option<writer::SegmentWriter>,
+    writer: Option<writer::StreamWriter>,
 
     /// Configuration settings.
     config: StreamConfig,
@@ -199,7 +209,7 @@ impl Stream {
 pub struct Segment {
     /// A view of the segment data.
     /// The file handle is independent of the Pack index.
-    data: Option<::mmap::MmapMut>,
+    data: Option<crate::mmap::MmapMut>,
 
     /// The pack index must be all inclusive of the entire segment.
     /// However, each packs data may be faulted in and freed based
@@ -210,8 +220,8 @@ pub struct Segment {
 impl Segment {
     pub fn would_block(&mut self, pack: &mut Pack) -> bool {
         // Is the pack already loaded?
-        if pack.data.is_some() {
-            return false
+        if !pack.data.is_null() {
+            return false;
         }
 
         match self.data {
@@ -225,18 +235,18 @@ impl Segment {
                     // then do load operation immediately since it won't block.
 
                     // Allocate listpack with room for the header.
-                    let lp = ::alloc::alloc(pack.length as usize + 6);
+                    let lp = crate::alloc::alloc(pack.length as usize + 6);
                     unsafe {
                         ptr::copy_nonoverlapping(
                             mmap.as_ptr().offset(pack.offset as isize),
                             // Copy to right past header.
                             lp.offset(6),
-                            pack.length as usize
+                            pack.length as usize,
                         );
                     }
                     // Set raw header.
-                    ::redis::listpack::set_total_bytes(lp, pack.length as u32 + 6u32);
-                    ::redis::listpack::set_num_elements(lp, pack.count);
+                    crate::redis::listpack::set_total_bytes(lp, pack.length as u32 + 6u32);
+                    crate::redis::listpack::set_num_elements(lp, pack.count);
 
 //                    pack.data = Some(Listpack::from_raw(lp));
                     false
@@ -251,7 +261,6 @@ impl Segment {
 
 impl Drop for Segment {
     fn drop(&mut self) {
-
         println!("dropped Segment");
     }
 }
@@ -277,13 +286,17 @@ pub struct Pack {
     count: u16,
     /// The actual content in Redis Streams listpack format.
     /// These represent a Rax node.
-    data: Option<record::PackData>,
+    data: listpack::listpack,
 }
 
 impl Drop for Pack {
     fn drop(&mut self) {
         // Force dealloc on the Listpack once Pack is only weakly referenced.
-        self.data = None;
+        if !self.data.is_null() {
+            dealloc(self.data);
+            self.data = ptr::null_mut();
+        }
+
         // Decrement segment ref count.
         self.segment = None;
 
@@ -299,7 +312,7 @@ impl Pack {
             offset: 0,
             length: 0,
             count: 0,
-            data: None,
+            data: ptr::null_mut(),
         }
     }
 
@@ -419,17 +432,16 @@ impl StreamManager {
             match streams.try_insert(name, Rc::clone(&stream)) {
                 Ok(ref existing) => {
                     if existing.is_some() {
-                        return Err(StreamError::Exists)
+                        return Err(StreamError::Exists);
                     }
                 }
                 Err(e) => {
                     match e {
-                        ::redis::rax::RaxError::OutOfMemory() => return Err(StreamError::OutOfMemory),
+                        crate::redis::rax::RaxError::OutOfMemory() => return Err(StreamError::OutOfMemory),
                         _ => return Err(StreamError::Generic(String::new()))
                     }
                 }
             }
-
 
 
             Ok(stream.clone())
@@ -449,7 +461,7 @@ impl StreamManager {
         unsafe {
             let segments = &mut s.segments;
 
-            let segment = Rc::from_raw(::alloc::leak_raw(Segment {
+            let segment = Rc::from_raw(crate::alloc::leak_raw(Segment {
                 data: None,
                 packs: map::StreamIDMap::new(),
             }));
@@ -487,15 +499,16 @@ impl StreamManager {
 }
 
 
+
+use super::*;
+
 #[cfg(tests)]
 pub mod tests {
-    use super::*;
-
     #[test]
     pub fn construct() {
-        let mut manager = StreamManager::new(
-            SDS::new("mybucket"),
-            std::path::Path::new("/Users/clay/sliced"),
-        );
+//        let mut manager = StreamManager::new(
+//            SDS::new("mybucket"),
+//            std::path::Path::new("/Users/clay/sliced"),
+//        );
     }
 }

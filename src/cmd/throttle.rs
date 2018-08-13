@@ -3,13 +3,13 @@ extern crate time;
 
 use super::super::error::{SlicedError};
 
-use redis::{Command, Redis};
-use redis::api;
+use crate::redis::{Command, Redis};
+use crate::redis::api;
 
-use cell;
-use cell::store;
+use crate::cell;
+use crate::cell::store;
 
-use cmd;
+use super::parse_i64;
 
 pub fn load(
     ctx: *mut api::RedisModuleCtx,
@@ -64,11 +64,11 @@ impl Command for ThrottleCommand {
 
         // the first argument is command name "cl.throttle" (ignore it)
         let key = args[1];
-        let max_burst = cmd::parse_i64(args[2])?;
-        let count = cmd::parse_i64(args[3])?;
-        let period = cmd::parse_i64(args[4])?;
+        let max_burst = parse_i64(args[2])?;
+        let count = parse_i64(args[3])?;
+        let period = parse_i64(args[4])?;
         let quantity = match args.get(5) {
-            Some(n) => cmd::parse_i64(n)?,
+            Some(n) => parse_i64(n)?,
             None => 1,
         };
 

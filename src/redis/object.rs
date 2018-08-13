@@ -39,7 +39,7 @@ pub struct RedisString {
 impl Drop for RedisString {
     fn drop(&mut self) {
         unsafe {
-            ::alloc::free(self);
+            crate::alloc::free(self);
             freeStringObject(self as *mut RedisString);
         }
     }

@@ -64,7 +64,7 @@ impl PartialOrd for StreamID {
 
 
 
-impl ::redis::rax::RaxKey for StreamID {
+impl crate::redis::rax::RaxKey for StreamID {
     type Output = StreamID;
 
     #[inline]

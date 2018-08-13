@@ -2,7 +2,7 @@ extern crate time;
 
 pub mod store;
 
-use error::SlicedError;
+use crate::error::SlicedError;
 
 // Maximum number of times to retry set_if_not_exists/compare_and_swap
 // operations before returning an error.
@@ -277,8 +277,8 @@ fn nanoseconds(x: time::Tm) -> i64 {
 mod tests {
     extern crate time;
 
-    use cell::*;
-    use error::SlicedError;
+    use crate::cell::*;
+    use crate::error::SlicedError;
     use std::error::Error;
 
     #[test]

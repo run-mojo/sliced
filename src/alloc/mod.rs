@@ -1,6 +1,7 @@
 //extern crate libc;
 
-use error::SlicedError;
+use crate::error::SlicedError;
+
 use libc;
 use std::alloc;
 use std::alloc::{Alloc, AllocErr, Layout};

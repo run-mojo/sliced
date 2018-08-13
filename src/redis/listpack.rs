@@ -34,7 +34,7 @@
 //! it is more natural to represent them in this way for the way the specification
 //! maps to C code).
 
-use ::alloc::*;
+use crate::alloc::*;
 use std;
 use std::alloc::*;
 use std::mem::size_of;
@@ -54,6 +54,51 @@ pub enum Value {
     Int(i64),
     ///
     String(*const u8, u32),
+}
+
+pub struct MemoizedValue {
+    pub encoded_size: u32,
+    pub value: Value,
+}
+
+impl MemoizedValue {
+    #[inline]
+    pub fn new(value: Value) -> MemoizedValue {
+        MemoizedValue {
+            encoded_size: value.encoded_size(),
+            value: value,
+        }
+    }
+
+    #[inline]
+    pub fn write(&self, dst: *mut u8) {
+        unsafe { self.value.encode(dst, self.encoded_size); }
+    }
+}
+
+pub struct UnsafeAppender {
+    dst: *mut u8,
+}
+
+impl UnsafeAppender {
+    #[inline]
+    pub unsafe fn new(dst: *mut u8, marker: u32) -> UnsafeAppender {
+        UnsafeAppender {
+            // Overwrite existing EOF.
+            dst: dst.offset((marker - 1) as isize)
+        }
+    }
+
+    #[inline]
+    pub unsafe fn append(&mut self, value: &MemoizedValue) {
+        value.write(self.dst);
+        self.dst = self.dst.offset(value.encoded_size as isize);
+    }
+
+    #[inline]
+    pub unsafe fn eof(&mut self) {
+        *self.dst = EOF;
+    }
 }
 
 impl PartialEq for Value {
@@ -655,6 +700,14 @@ pub fn set_num_elements(p: *mut u8, v: u16) {
     }
 }
 
+#[inline(always)]
+pub fn incr_num_elements(lp: *mut u8) {
+    let num_elements = get_num_elements(lp);
+    if num_elements != HDR_NUMELE_UNKNOWN {
+        set_num_elements(lp, num_elements + 1);
+    }
+}
+
 impl Into<Value> for super::sds::Sds {
     #[inline]
     fn into(self) -> Value {
@@ -683,6 +736,18 @@ pub fn parse_raw(mut p: *const u8, size: usize) -> Value {
             Value::String(p as *const u8, size as u32)
         } else {
             Value::Int(value)
+        }
+    }
+}
+
+#[inline]
+pub fn parse_raw_memoized(mut p: *const u8, size: usize) -> MemoizedValue {
+    unsafe {
+        let mut value: i64 = 0;
+        if super::sds::string2ll(p as *mut i8, size, (&mut value) as *mut i64) == 0 {
+            MemoizedValue::new(Value::String(p as *const u8, size as u32))
+        } else {
+            MemoizedValue::new(Value::Int(value))
         }
     }
 }
@@ -1261,7 +1326,7 @@ impl Value {
     }
 
     #[inline(always)]
-    unsafe fn encode(&self, dst: *mut u8, encoded_size: u32) {
+    pub unsafe fn encode(&self, dst: *mut u8, encoded_size: u32) {
         match *self {
             Value::Int(mut v) => {
                 // Little Endian
@@ -2050,7 +2115,7 @@ pub fn append_writes<A>(
                 return WriteResult(None, ptr::null_mut(), 0);
             }
             // realloc to make room
-            lp = ::alloc::realloc(lp, new_listpack_bytes as usize);
+            lp = crate::alloc::realloc(lp, new_listpack_bytes as usize);
             if lp.is_null() {
                 return WriteResult(None, ptr::null_mut(), 0);
             }
@@ -2653,8 +2718,8 @@ impl_str_as_ptr!(&'a str);
 
 #[cfg(test)]
 mod tests {
-    use redis::listpack::*;
-    use alloc::*;
+    use crate::redis::listpack::*;
+    use crate::alloc::*;
     use std;
 
     #[test]

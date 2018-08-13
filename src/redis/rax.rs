@@ -61,7 +61,7 @@
 #![feature(test)]
 
 
-use ::redis::sds::SDS;
+use crate::redis::sds::SDS;
 use libc;
 use std;
 use std::error;
@@ -2321,7 +2321,7 @@ extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use redis::rax::*;
+    use crate::redis::rax::*;
     use std::default::Default;
     //    use std;
     use std::fmt;

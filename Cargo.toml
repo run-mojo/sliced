@@ -1,7 +1,7 @@
 cargo-features = ["edition"]
 
 [package]
-#edition = "2018"
+edition = "2018"
 name = "sliced"
 version = "0.2.3"
 authors = ["Mojo <clay@mojo.run>"]
@@ -10,9 +10,9 @@ build = "build.rs"
 [lib]
 crate-type = ["dylib", "rlib"]
 
-[[example]]
-name = "streams"
-path = "examples/streams.rs"
+# [[example]]
+# name = "streams"
+# path = "examples/streams.rs"
 
 
 [dependencies]

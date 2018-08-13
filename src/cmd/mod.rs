@@ -6,7 +6,7 @@ pub mod throttle;
 pub mod stream;
 pub mod version;
 
-use error::{SlicedError};
+use crate::error::{SlicedError};
 
 pub fn parse_i64(arg: &str) -> Result<i64, SlicedError> {
     arg.parse::<i64>()

@@ -1,6 +1,6 @@
-use alloc::ALLOCATOR as A;
-use redis::api;
-use redis::listpack::{Listpack, Value};
+use crate::alloc::ALLOCATOR as A;
+use crate::redis::api;
+use crate::redis::listpack::{Listpack, Value};
 use smallvec::SmallVec;
 use super::*;
 //use super::id::*;
@@ -45,16 +45,8 @@ impl<'a> Record<'a> {
 /// except it doesn't have a header in the allocation and mostly
 /// append-only.
 pub struct PackData {
-    /// Master Stream ID.
-    /// All record IDs within listpack are delta encoded from the master
-    /// except for the first record in which case it "is" the ID.
-    master_id: StreamID,
     /// A standard Listpack is used.
     lp: listpack::listpack,
-    num_fields: u16,
-    fields: *mut u8,
-    //    /// Pointer to the first record.
-    first: *mut u8,
 }
 
 unsafe impl Sync for PackData {}
@@ -68,7 +60,7 @@ impl Drop for PackData {
 }
 
 impl PackData {
-    /// Open and setup a pack from a raw allocation without listpack header.
+    // Open and setup a pack from a raw allocation without listpack header.
 //    pub fn from_disk(lp: *mut u8, length: u32, count: u16) -> Option<PackData> {
 //        let mut ele = lp;
 //        if let Some(count) = listpack::get_i16(lp) {
@@ -87,20 +79,6 @@ impl PackData {
 //            None
 //        }
 //    }
-
-
-
-//    pub fn last(&self) -> Option<*mut u8> {
-//        unsafe {
-//            listpack::prev_no_hdr(self.lp, self.lp.offset(self.size as isize))
-//        }
-//    }
-
-    pub fn new_from_sds(min_alloc: u32, first: &[SDS]) -> Option<PackData> {
-        None
-    }
-
-    pub fn append_sds(&mut self, fields: &[SDS]) {}
 }
 
 /// Aggressively cache the Pack

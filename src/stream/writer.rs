@@ -1,15 +1,47 @@
-use super::*;
-use super::record::*;
+use crate::redis::listpack;
+use crate::redis::listpack::{MemoizedValue, UnsafeAppender, Value};
+use spin::Mutex;
 use std::ptr;
 use std::sync::Arc;
-use spin::Mutex;
+use super::*;
+use super::record::*;
 
-use redis::listpack;
-use redis::listpack::Value;
+// Redis Streams entry flags
+pub const STREAM_ITEM_FLAG_NONE: i32 = 0;               /* No special flags. */
+pub const STREAM_ITEM_FLAG_DELETED: i32 = (1 << 0);     /* Entry is delted. Skip it. */
+pub const STREAM_ITEM_FLAG_SAMEFIELDS: i32 = (1 << 1);  /* Same fields as master entry. */
+pub const STREAM_ITEM_FLAG_SLOT: i32 = (1 << 2);        /* Has slot number */
+pub const STREAM_ITEM_FLAG_TX: i32 = (1 << 3);          /* Has tx key */
+pub const STREAM_ITEM_FLAG_DEDUPE: i32 = (1 << 4);      /* Has de-duplication key */
 
-/// Manages appending to a Stream's tail segment.
-pub struct SegmentWriter {
-    last_id: StreamID,
+/// Reserved field name for Slot number chosen.
+pub const FIELD_SLOT: &'static [u8] = b"[";
+pub const FIELD_TX_KEY: &'static str = "^";
+pub const FIELD_CALLER_ID: &'static str = "#";
+pub const FIELD_REPLY_MAILBOX: &'static str = "@";
+pub const FIELD_DUPE_KEY: &'static str = "?";
+pub const FIELD_DEFER: &'static str = "!";
+
+pub struct StreamStats {
+    total_records: u64,
+    total_packs: u64,
+    total_segments: u64,
+    total_same_fields: u64,
+    total_deleted: u64,
+    avg_record_size: f32,
+    avg_fields_per_record: f32,
+    avg_records_per_pack: f32,
+}
+
+pub struct StreamArchiveStats {
+    segments: u64,
+    total_size: u64,
+    total_size_compressed: u64,
+}
+
+/// Mutations to a stream is managed by the StreamWriter.
+pub struct StreamWriter {
+    stream: Rc<Stream>,
 
     /// ID of the segment is the min StreamID available within it.
     segment_id: StreamID,
@@ -20,6 +52,8 @@ pub struct SegmentWriter {
     /// Protected by a spin Mutex since it is shared with an I/O thread.
     aof: Option<Arc<Mutex<aof::AOF>>>,
 
+    /// Last used StreamID. The next ID must be greater than the previous.
+    last_id: StreamID,
     /// Master ID of the tail pack.
     /// All record IDs within listpack are delta encoded from the master
     /// except for the first record in which case it "is" the ID.
@@ -76,7 +110,15 @@ pub struct SegmentWriter {
     growing: bool,
 }
 
-impl SegmentWriter {
+struct NeedMoreDiskSpace {}
+
+#[inline]
+///
+pub fn realloc_for_write(p: *mut u8, size: usize) -> *mut u8 {
+    realloc(p, size)
+}
+
+impl StreamWriter {
     pub fn next_id(&mut self) -> StreamID {
         self.last_id = id::next_id(&self.last_id);
         self.last_id
@@ -84,7 +126,6 @@ impl SegmentWriter {
 
     /// Attempts to
     pub fn try_write(&mut self, kv: &mut [listpack::Value]) -> Result<(), StreamError> {
-
         match self.aof {
             Some(ref aof) => {
                 match aof.try_lock() {
@@ -95,12 +136,7 @@ impl SegmentWriter {
 
                         // Get the tail pack.
                         match self.tail {
-                            Some(ref mut tail) => {
-                                match tail.data {
-                                    Some(ref data) => {},
-                                    None => {}
-                                }
-                            },
+                            Some(ref mut tail) => {}
                             None => {
                                 // Determine new
                                 let mut pack = Pack::new();
@@ -127,19 +163,19 @@ impl SegmentWriter {
 //                        drop(locked);
 
                         Ok(())
-                    },
+                    }
                     // Background thread has the lock.
                     // It's the commands responsibility to determine if it wants
                     // to create a Future and wait for the availability of the AOF.
                     None => return Err(StreamError::WouldBlock)
                 }
-            },
+            }
             None => return Err(StreamError::WouldBlock)
         }
     }
 
-    pub fn new_pack(min_alloc: u32, id: &StreamID, kv: &mut [Value]) -> Result<PackData, StreamError> {
-        let raw_lp = alloc(min_alloc as usize);
+    fn new_pack(&mut self, id: &StreamID, kv: &mut [Value]) -> Result<PackData, StreamError> {
+        let raw_lp = alloc(self.pack_min as usize);
         if raw_lp.is_null() {
             return Err(StreamError::OutOfMemory);
         }
@@ -171,7 +207,7 @@ impl SegmentWriter {
          * +----+-----+----------+----------+---------+----------+
          * | ms | seq |  offset  |  length  |  count  |    EOF   |
          * +----+-----+----------+--=-------+---------+----------+
-        */
+         */
         // count = 1
         if !lp.append(1) {
             return Err(StreamError::OutOfMemory);
@@ -184,8 +220,7 @@ impl SegmentWriter {
 //        lp = append_int(A, lp, 1).unwrap_or_else(|| return Err(StreamError::OutOfMemory)); // count = 1
 //        lp = append_int(A, lp, 0).unwrap(); // deleted = 0
 //        lp = append_int(A, lp, first.len()).unwrap(); // num_fields = 0
-//
-//
+
 //        // append master fields.
 //
 //        lp = append_int(A, lp, 0).unwrap(); // count = 1
@@ -193,11 +228,19 @@ impl SegmentWriter {
         Err(StreamError::OutOfMemory)
     }
 
+    fn begin_pack(
+        &mut self,
+        id_ms: &MemoizedValue,
+        id_seq: &MemoizedValue,
+        kv: &mut [MemoizedValue],
+    ) {}
+
     /// Adds a new record only if it fits within the max_size.
-    fn append_tail(
+    fn append(
         &mut self,
         id: &StreamID,
-        kv: &mut [Value],
+        kv: &mut [MemoizedValue],
+        pack: &mut Pack,
     ) -> Result<(), StreamError> {
         /* Populate the listpack with the new entry. We use the following
          * encoding:
@@ -222,29 +265,106 @@ impl SegmentWriter {
          * the entry, and jump back N times to seek the "flags" field to read
          * the stream full entry. */
 
+        // Size check.
+        // We calculate the total encoded size to determine overflow of the pack
+        // and/or segment.
+        // NOTE that this includes field names regardless of SAMEFIELDS.
+        // We determine whether the existing Pack can handle the write
+        // and if the AOF can take it immediately.
+        // If Not, then we need to handle this as a blocking command.
+
+        // Create StreamID diff values.
+        let id_ms = MemoizedValue::new(
+            Value::Int((id.ms - self.tail_master_id.ms) as i64)
+        );
+        let id_seq = MemoizedValue::new(
+            Value::Int((id.seq - self.tail_master_id.seq) as i64)
+        );
+
+        let mut lp_size = listpack::get_total_bytes(pack.data);
+
+        // Are there any key-values to store?
         if kv.is_empty() {
-//            self.lp.append_val2(0);
+            let flag_val = MemoizedValue::new(
+                Value::Int(STREAM_ITEM_FLAG_NONE as i64)
+            );
+            let num_fields_val = MemoizedValue::new(
+                Value::Int(0)
+            );
+            let lp_count = MemoizedValue::new(
+                Value::Int((5) as i64)
+            );
+
+            let mut encoded_size =
+                flag_val.encoded_size +
+                    id_ms.encoded_size +
+                    id_seq.encoded_size +
+                    num_fields_val.encoded_size +
+                    lp_count.encoded_size;
+
+            // Calculate new listpack size.
+            let new_lp_size = encoded_size + lp_size;
+            // Would it overflow?
+            if new_lp_size > self.pack_max {
+                //
+                return Err(StreamError::Overflow);
+            }
+            // Maybe increase allocation?
+            if self.tail_alloc < new_lp_size {
+                let new_lp = realloc_for_write(
+                    pack.data,
+                    new_lp_size as usize,
+                );
+                // OOM?
+                if new_lp.is_null() {
+                    return Err(StreamError::OutOfMemory);
+                }
+                // Update tail_alloc
+                self.tail_alloc = new_lp_size;
+                // New allocation?
+                if new_lp != pack.data {
+                    pack.data = new_lp;
+                }
+            }
+
+            // Do actual writes.
+            unsafe {
+                let mut writer = UnsafeAppender::new(
+                    pack.data,
+                    lp_size,
+                );
+                writer.append(&flag_val);
+                writer.append(&id_ms);
+                writer.append(&id_seq);
+                writer.append(&num_fields_val);
+                writer.append(&lp_count);
+
+                listpack::set_total_bytes(pack.data, new_lp_size);
+                listpack::incr_num_elements(pack.data);
+            }
 
             Ok(())
         } else {
+            // Ensure we have key-values.
             if kv.len() % 2 != 0 {
                 return Err(StreamError::BadInput);
             }
 
+            // Calculate the number of fields.
             let num_fields = kv.len() / 2;
             let mut flags = STREAM_ITEM_FLAG_NONE;
 
             // Do the SAMEFIELDS check.
             if self.tail_num_fields == num_fields as u16 {
-                let mut ele = self.fields;
-                if listpack::get(ele) == kv[0] {
+                let mut ele = self.tail_fields;
+                if listpack::get(ele) == kv[0].value {
                     flags |= STREAM_ITEM_FLAG_SAMEFIELDS;
                     for index in 1..num_fields {
-                        match listpack::next(self.lp, ele) {
+                        match listpack::next(pack.data, ele) {
                             Some(n) => {
                                 ele = n;
 
-                                if listpack::get(ele) != kv[index * 2] {
+                                if listpack::get(ele) != kv[index * 2].value {
                                     flags = STREAM_ITEM_FLAG_NONE;
                                     break;
                                 }
@@ -258,50 +378,139 @@ impl SegmentWriter {
                 }
             }
 
-            let mut marker = listpack::get_total_bytes(self.lp);
-            let mut lp_size = marker;
-
-            let flag_val = Value::Int(flags as i64);
-            let id_ms = Value::Int((id.ms - self.tail_master_id.ms) as i64);
-            let id_seq = Value::Int((id.seq - self.tail_master_id.seq) as i64);
+            let flag_val = MemoizedValue::new(
+                Value::Int(flags as i64)
+            );
 
             let mut encoded_size =
-                flag_val.encoded_size() +
-                    id_ms.encoded_size() +
-                    id_seq.encoded_size();
+                flag_val.encoded_size +
+                    id_ms.encoded_size +
+                    id_seq.encoded_size;
 
             if flags == STREAM_ITEM_FLAG_SAMEFIELDS {
-                let lp_count = Value::Int((4 + num_fields) as i64);
-                encoded_size += lp_count.encoded_size();
+                let lp_count = MemoizedValue::new(
+                    Value::Int((4 + num_fields) as i64)
+                );
+                encoded_size += lp_count.encoded_size;
 
                 for index in 0..num_fields {
-                    encoded_size += kv[index * 2 + 1].encoded_size();
+                    encoded_size += kv[index * 2 + 1].encoded_size;
                 }
 
+                // Calculate new listpack size.
+                let new_lp_size = encoded_size + lp_size;
                 // Would it overflow?
-                if encoded_size + marker > self.pack_max {
+                if new_lp_size > self.pack_max {
                     return Err(StreamError::Overflow);
                 }
-
                 // Maybe increase allocation?
-            } else {
-                let fields = Value::Int(num_fields as i64);
-                let lp_count = Value::Int((5 + kv.len()) as i64);
-                encoded_size = fields.encoded_size() + lp_count.encoded_size();
+                if self.tail_alloc < new_lp_size {
+                    let new_lp = realloc_for_write(
+                        pack.data,
+                        new_lp_size as usize,
+                    );
+                    // OOM?
+                    if new_lp.is_null() {
+                        return Err(StreamError::OutOfMemory);
+                    }
+                    // Update tail_alloc
+                    self.tail_alloc = new_lp_size;
+                    // New allocation?
+                    if new_lp != pack.data {
+                        pack.data = new_lp;
+                    }
+                }
 
+                // Do actual writes.
+                unsafe {
+                    let mut writer = UnsafeAppender::new(
+                        pack.data,
+                        lp_size,
+                    );
+                    writer.append(&flag_val);
+                    writer.append(&id_ms);
+                    writer.append(&id_seq);
+
+                    // Only write values since we have SAMEFIELDS flag.
+                    for index in 0..num_fields {
+                        writer.append(&kv[index * 2 + 1]);
+                    }
+
+                    writer.append(&lp_count);
+
+                    listpack::set_total_bytes(pack.data, new_lp_size);
+                    listpack::incr_num_elements(pack.data);
+                }
+            } else {
+                // Store keys and values.
+                let num_fields_val = MemoizedValue::new(
+                    Value::Int(num_fields as i64)
+                );
+                let lp_count = MemoizedValue::new(
+                    Value::Int((5 + kv.len()) as i64)
+                );
+                encoded_size += num_fields_val.encoded_size + lp_count.encoded_size;
+
+                // Calculate encoded size of all field-values.
                 for index in 0..num_fields {
                     // Add field and value encoded sizes
                     encoded_size +=
-                        kv[index * 2].encoded_size() +
-                            kv[index * 2 + 1].encoded_size();
+                        kv[index * 2].encoded_size +
+                            kv[index * 2 + 1].encoded_size;
                 }
 
+                // Calculate new listpack size.
+                let new_lp_size = encoded_size + lp_size;
                 // Would it overflow?
-                if encoded_size + marker > self.pack_max {
+                if new_lp_size > self.pack_max {
+                    // Change to master record.
+
+                    // Can we
+                    // Can add another pack to AOF?
+
+                    // Get next pack.
                     return Err(StreamError::Overflow);
                 }
-
                 // Maybe increase allocation?
+                if self.tail_alloc < new_lp_size {
+                    let new_lp = realloc_for_write(
+                        pack.data,
+                        new_lp_size as usize,
+                    );
+                    // OOM?
+                    if new_lp.is_null() {
+                        return Err(StreamError::OutOfMemory);
+                    }
+                    // Update tail_alloc
+                    self.tail_alloc = new_lp_size;
+                    // New allocation?
+                    if new_lp != pack.data {
+                        pack.data = new_lp;
+                    }
+                }
+
+                // Do actual writes.
+                unsafe {
+                    let mut writer = UnsafeAppender::new(
+                        pack.data,
+                        lp_size,
+                    );
+                    writer.append(&flag_val);
+                    writer.append(&id_ms);
+                    writer.append(&id_seq);
+                    writer.append(&num_fields_val);
+
+                    for index in 0..num_fields {
+                        // Add field and value encoded sizes
+                        writer.append(&kv[index * 2]);
+                        writer.append(&kv[index * 2 + 1]);
+                    }
+
+                    writer.append(&lp_count);
+
+                    listpack::set_total_bytes(pack.data, new_lp_size);
+                    listpack::incr_num_elements(pack.data);
+                }
             }
 
             Err(StreamError::Overflow)
@@ -319,11 +528,7 @@ impl SegmentWriter {
 
     /// After a crash or restart we need to figure out what the state
     /// of affairs is and fix up any issues.
-    pub fn recover(&mut self) {
+    pub fn recover(&mut self) {}
 
-    }
-
-    pub fn append_file(&mut self, lp_write: listpack::WriteResult) {
-
-    }
+    pub fn append_file(&mut self, lp_write: listpack::WriteResult) {}
 }

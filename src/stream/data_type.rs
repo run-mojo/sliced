@@ -1,6 +1,5 @@
+use crate::redis::api;
 use libc;
-use ::redis::api;
-
 use super::*;
 
 static mut STREAM_TYPE: usize = 0;
@@ -25,7 +24,7 @@ pub fn load(ctx: *mut api::RedisModuleCtx) -> api::Status {
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn Sliced_Type_Stream_RDBLoad(rdb: *mut api::RedisModuleIO,
-                                    encver: libc::c_int) {
+                                             encver: libc::c_int) {
 //        log_debug!(self, "Histogram_RDBLoad");
     println!("slice/d Stream RDBLoad");
 }
@@ -33,8 +32,9 @@ pub extern "C" fn Sliced_Type_Stream_RDBLoad(rdb: *mut api::RedisModuleIO,
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 #[no_mangle]
-pub extern "C" fn Sliced_Type_Stream_RDBSave(rdb: *mut api::RedisModuleIO,
-                                    value: *mut u8) {
+pub extern "C" fn Sliced_Type_Stream_RDBSave(
+    rdb: *mut api::RedisModuleIO,
+    value: *mut u8) {
 //        log_debug!(self, "{} [began] args = {:?}", command, args);
     println!("slice/d Stream RDBSave");
 }
@@ -43,8 +43,8 @@ pub extern "C" fn Sliced_Type_Stream_RDBSave(rdb: *mut api::RedisModuleIO,
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn Sliced_Type_Stream_AOFRewrite(rdb: *mut api::RedisModuleIO,
-                                       key: *mut api::RedisModuleString,
-                                       value: *mut u8) {
+                                                key: *mut api::RedisModuleString,
+                                                value: *mut u8) {
     unsafe {
         let mut stream: *mut Stream = value as *mut _ as *mut Stream;
     }
@@ -86,8 +86,8 @@ pub extern "C" fn Sliced_Type_Stream_AOFRewrite(rdb: *mut api::RedisModuleIO,
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn Sliced_Type_Stream_MemUsage(rdb: *mut api::RedisModuleIO,
-                                     key: *mut api::RedisModuleString,
-                                     value: *mut u8) -> libc::size_t {
+                                              key: *mut api::RedisModuleString,
+                                              value: *mut u8) -> libc::size_t {
     println!("slice/d Stream MemUsage");
     return 0;
 }
@@ -96,7 +96,7 @@ pub extern "C" fn Sliced_Type_Stream_MemUsage(rdb: *mut api::RedisModuleIO,
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn Sliced_Type_Stream_Digest(digest: *mut api::RedisModuleDigest,
-                                   value: *mut u8) {
+                                            value: *mut u8) {
     println!("slice/d Stream Digest");
 }
 

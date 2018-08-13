@@ -1,4 +1,4 @@
-extern crate cpp_build;
+//extern crate cpp_build;
 extern crate gcc;
 
 fn main() {
@@ -36,5 +36,5 @@ fn main() {
 //        .compile("liblistpack.a");
     // The GCC module emits `rustc-link-lib=static=redismodule` for us.
 
-    cpp_build::build("src/lib.rs");
+//    cpp_build::build("src/lib.rs");
 }

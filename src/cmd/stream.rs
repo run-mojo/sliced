@@ -1,9 +1,9 @@
 extern crate libc;
 extern crate time;
 
-use error::SlicedError;
-use redis::{Command, Redis};
-use redis::api;
+use crate::error::SlicedError;
+use crate::redis::{Command, Redis};
+use crate::redis::api;
 
 ///
 pub fn load(
