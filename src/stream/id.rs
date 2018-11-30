@@ -4,6 +4,8 @@ use std::fmt;
 use std::mem;
 use time;
 
+use super::listpack::*;
+
 #[derive(Copy)]
 #[repr(C)]
 pub struct StreamID {
@@ -64,11 +66,11 @@ impl PartialOrd for StreamID {
 
 
 
-impl crate::redis::rax::RaxKey for StreamID {
+impl crate::redis::rax::RaxKeyOld for StreamID {
     type Output = StreamID;
 
     #[inline]
-    fn encode(self) -> Self::Output {
+    fn encode(&self) -> Self::Output {
         StreamID {
             ms: self.ms.to_be(),
             seq: self.seq.to_be(),
@@ -112,5 +114,46 @@ pub fn next_id(last: &StreamID) -> StreamID {
         StreamID { ms, seq: 0 }
     } else {
         StreamID { ms: last.ms, seq: last.seq + 1 }
+    }
+}
+
+#[inline]
+/// Convert that value to a u64 regardless of it's encoded representation.
+pub fn try_parse(value: Value) -> Option<u64> {
+    match value {
+        Value::Int(v) => Some(v as u64),
+        Value::String(p, l) => {
+            // Ensure the length is that of a 64bit integer.
+            if l == (mem::size_of::<u64>() as u32) {
+                unsafe {
+                    // Transmute in Little-Endian.
+                    Some(u64::from_le(*(p as *mut [u8; mem::size_of::<u64>()] as *mut u64)))
+                }
+            } else {
+                None
+            }
+        }
+    }
+}
+
+#[inline]
+/// Convert that value to a u64 regardless of it's encoded representation.
+pub fn try_parse_master(previous: u64, value: Value) -> Option<u64> {
+    match value {
+        // Int is used for delta encoding.
+        Value::Int(v) => Some(((previous as i64) + v) as u64),
+
+        // String is used for the full value.
+        Value::String(p, l) => {
+            // Ensure the length is that of a 64bit integer.
+            if l == (mem::size_of::<u64>() as u32) {
+                unsafe {
+                    // Transmute in Little-Endian.
+                    Some(u64::from_le(*(p as *mut [u8; mem::size_of::<u64>()] as *mut u64)))
+                }
+            } else {
+                None
+            }
+        }
     }
 }

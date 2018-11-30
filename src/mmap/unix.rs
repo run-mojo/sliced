@@ -1,6 +1,7 @@
 use libc;
 use std::{io, ptr};
 use std::fs::File;
+use std::mem;
 use std::os::unix::io::{AsRawFd, RawFd};
 
 #[cfg(any(all(target_os = "linux", not(target_arch = "mips")), target_os = "freebsd",
@@ -146,29 +147,7 @@ impl MmapInner {
         let vec_size = (len + page_size() - 1) / page_size();
 
         unsafe {
-            if vec_size < 17 {
-                let v = &mut [0i8; 16];
-                if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
-                    return false;
-                }
-                for i in 0..vec_size {
-                    if v[i] == 0 {
-                        return false
-                    }
-                }
-                true
-            } else if vec_size < 65 {
-                let v = &mut [0i8; 64];
-                if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
-                    return false;
-                }
-                for i in 0..vec_size {
-                    if v[i] == 0 {
-                        return false
-                    }
-                }
-                true
-            } else if vec_size < 257 {
+            if vec_size < 257 {
                 let v = &mut [0i8; 256];
                 if libc::mincore(self.ptr.offset(offset as isize), len, v.as_mut_ptr()) != 0 {
                     return false;
@@ -270,6 +249,35 @@ unsafe impl Sync for MmapInner {}
 
 unsafe impl Send for MmapInner {}
 
-fn page_size() -> usize {
+pub fn page_size() -> usize {
     unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+}
+
+//struct statvfs {
+//    f_bsize: usize,    /* file system block size */
+//    f_frsize: usize;   /* fundamental file system block size */
+//    f_blocks;   /* number of blocks (unit f_frsize) */
+//    fsblkcnt_t    f_bfree;    /* free blocks in file system */
+//    fsblkcnt_t    f_bavail;   /* free blocks for non-root */
+//    fsfilcnt_t    f_files;    /* total file inodes */
+//    fsfilcnt_t    f_ffree;    /* free file inodes */
+//    fsfilcnt_t    f_favail;   /* free file inodes for to non-root */
+//    unsigned long f_fsid;     /* file system id */
+//    unsigned long f_flag;     /* bit mask of f_flag values */
+//    unsigned long f_namemax;  /* maximum filename length */
+//};
+
+pub fn fs_stats(path: &str) -> super::FsStats {
+    unsafe {
+        let mut stats: libc::statvfs = mem::zeroed();
+        libc::statvfs(path.as_ptr() as *const i8, &mut stats as *mut libc::statvfs);
+
+        super::FsStats {
+            io_size: stats.f_bsize as usize,
+            block_size: stats.f_frsize as usize,
+            total_blocks: stats.f_blocks as usize,
+            avail_blocks: stats.f_bavail as usize,
+            name_max_len: stats.f_namemax as u32,
+        }
+    }
 }

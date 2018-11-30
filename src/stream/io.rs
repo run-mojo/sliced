@@ -1,3 +1,8 @@
+use crate::alloc::{alloc, free};
+use crate::mmap::{Mmap, MmapMut, MmapOptions};
+use crate::redis::listpack::Listpack;
+use crate::redis::rax::RaxMap;
+use crate::redis::sds::SDS;
 use spin::Mutex;
 use std::cell::Cell;
 use std::fs;
@@ -8,14 +13,8 @@ use std::rc::{Rc, Weak};
 use std::sync::{Arc, Weak as ArcWeak};
 use std::sync::mpsc;
 use std::thread;
-
-use crate::alloc::{alloc, free};
-use crate::mmap::{Mmap, MmapMut, MmapOptions};
-use crate::redis::listpack::Listpack;
-use crate::redis::rax::RaxMap;
-use crate::redis::sds::SDS;
-
 use super::*;
+
 //use super::id::{next_id, StreamID};
 
 
@@ -114,7 +113,21 @@ struct SegmentEntry {
     location: Cell<Location>,
 }
 
+pub struct FileHandle {
+    fd: std::fs::File,
+    mmap: Option<mmap::MmapMut>,
+}
+
 fn base_mem_usage(s: &StorageService) {}
+
+///
+pub struct Snapshot {
+
+}
+
+pub struct SnapshotRecord {
+
+}
 
 /// Manages persistence of Streams through segment files.
 ///
@@ -196,9 +209,7 @@ impl StorageService {
                     Ok(task) => {
                         match task {
                             // Create and open a new file.
-                            Task::Create(ref create) => {
-
-                            }
+                            Task::Create(ref create) => {}
                             Task::Read(ref read) => {}
                             Task::Sync(ref sync) => {}
                             Task::Shutdown => {}
@@ -214,33 +225,47 @@ impl StorageService {
         if !path.exists() {
             match fs::create_dir_all(path) {
                 Ok(_) => {}
-                Err(_) => {
+                Err(_) =>
                     return Err(StreamError::CreateDir(
                         String::from(path.to_str().unwrap_or("<empty>"))
                     ))
-                }
             }
         } else if !path.is_dir() {
             // The path exists, however it's not a directory.
             return Err(StreamError::NotDir(
                 String::from(path.to_str().unwrap_or("<empty>"))
-            ))
+            ));
         } else {
             // Do recovery
             match path.read_dir() {
-                Ok(_) => {
-                    // Find
+                Ok(dir) => {
+                    // Find "0" db index.
+                    let mut db_dir: Option<fs::DirEntry> = None;
+                    for entry in dir {
+                        if let Ok(entry) = entry {
+                            if entry.path().ends_with("0") {
+
+                            }
+                            println!("{:?}", entry.path());
+                        }
+                    }
                 }
-                Err(_) => return Err(StreamError::ReadDir(
-                    String::from(path.to_str().unwrap_or("<empty>"))
-                ))
+                Err(_) =>
+                    return Err(StreamError::ReadDir(
+                        String::from(path.to_str().unwrap_or("<empty>"))
+                    ))
             }
         }
 
         Ok(StorageService {
+            // Directory path string
             dir: String::from(path.to_str().unwrap_or("<unknown>")),
+
+            // Background channel
             bg_sender: bg_sender.clone(),
             bg_thread: handle,
+
+            // Event-loop channel
             ev_sender: ev_sender.clone(),
             ev_receiver,
             futures: RaxMap::new(),
@@ -290,18 +315,26 @@ impl StorageService {
 }
 
 impl Drop for StorageService {
-    fn drop(&mut self) {
+    fn drop(&mut self) {}
+}
+
+pub struct StreamStorage {
+
+}
+
+impl StreamStorage {
+    pub fn open(p: &Path) {
+        // Recover
     }
 }
+
 
 /// After a segment becomes immutable it is immediately scheduled to be archived
 /// into archive storage which is either another mounted file system or an object
 /// storage system like Amazon S3. Once, a file is confirmed to be archived, then
 /// it will be un-pinned from the local file-system and available for removal when
 /// the system would like to free up some disk space.
-pub struct ArchiveService {
-
-}
+pub struct ArchiveService {}
 
 #[cfg(test)]
 mod tests {

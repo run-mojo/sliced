@@ -7,7 +7,8 @@ use libc;
 use std;
 use std::cmp::Ordering;
 use std::fmt;
-use smallvec;
+
+extern crate smallvec;
 
 /// Return the existing Rax allocator.
 pub unsafe fn allocator() -> (

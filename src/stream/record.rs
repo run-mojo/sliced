@@ -1,5 +1,5 @@
 use crate::alloc::ALLOCATOR as A;
-use crate::redis::api;
+use crate::redis::redmod;
 use crate::redis::listpack::{Listpack, Value};
 use smallvec::SmallVec;
 use super::*;

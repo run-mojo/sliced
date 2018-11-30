@@ -4,7 +4,7 @@ extern crate time;
 use super::super::error::{SlicedError};
 
 use crate::redis::{Command, Redis};
-use crate::redis::api;
+use crate::redis::redmod;
 
 use crate::cell;
 use crate::cell::store;
@@ -12,12 +12,12 @@ use crate::cell::store;
 use super::parse_i64;
 
 pub fn load(
-    ctx: *mut api::RedisModuleCtx,
-    _argv: *mut *mut api::RedisModuleString,
+    ctx: *mut redmod::RedisModuleCtx,
+    _argv: *mut *mut redmod::RedisModuleString,
     _argc: libc::c_int,
-) -> api::Status {
+) -> redmod::Status {
     let command = ThrottleCommand {};
-    if api::create_command(
+    if redmod::create_command(
         ctx,
         format!("{}\0", command.name()).as_ptr(),
         Some(Throttle_RedisCommand),
@@ -25,20 +25,20 @@ pub fn load(
         0,
         0,
         0,
-    ) == api::Status::Err {
-        return api::Status::Err;
+    ) == redmod::Status::Err {
+        return redmod::Status::Err;
     }
-    return api::Status::Ok
+    return redmod::Status::Ok
 }
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn Throttle_RedisCommand(
-    ctx: *mut api::RedisModuleCtx,
-    argv: *mut *mut api::RedisModuleString,
+    ctx: *mut redmod::RedisModuleCtx,
+    argv: *mut *mut redmod::RedisModuleString,
     argc: libc::c_int,
-) -> api::Status {
+) -> redmod::Status {
     Command::harness(&ThrottleCommand {}, ctx, argv, argc)
 }
 

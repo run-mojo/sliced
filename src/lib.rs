@@ -1,29 +1,8 @@
 // `const_fn` is needed for `spin::Once`.
 #![feature(async_await, await_macro, pin, arbitrary_self_types, futures_api)]
-#![feature(global_allocator, allocator_api, heap_api)]
-
-// Rc clone
-#![feature(optin_builtin_traits)]
-#![feature(box_into_raw_non_null)]
-#![feature(core_intrinsics)]
-#![feature(dropck_eyepatch)]
 #![feature(allocator_api)]
-#![feature(ptr_internals)]
-#![feature(specialization)]
-#![feature(coerce_unsized)]
-#![feature(unsize)]
-#![feature(lang_items)]
-#![feature(unboxed_closures)]
-#![feature(generator_trait)]
-#![feature(exact_size_is_empty)]
-#![feature(fn_traits)]
-// End Rc clone
 
-// raw_vec
-#![feature(const_fn)]
-#![feature(try_reserve)]
-
-#![cfg_attr(feature = "no_std", feature(const_fn))]
+//#![cfg_attr(feature = "no_std", feature(const_fn))]
 
 //extern crate dlopen;
 //#[macro_use]
@@ -45,14 +24,15 @@ extern crate time;
 #[cfg(windows)]
 extern crate winapi;
 
+//extern crate hyper;
+
 //use dlopen::wrapper::{Container, WrapperApi};
-use self::redis::api;
+use self::redis::redmod;
 
 #[macro_use]
 mod macros;
 
 /// Modules
-pub mod page_size;
 pub mod mmap;
 pub mod cell;
 pub mod cmd;
@@ -72,10 +52,10 @@ static GLOBAL: alloc::RedisAllocator = alloc::RedisAllocator;
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn sliced_on_keyspace_event(
-    ctx: *mut api::RedisModuleCtx,
+    ctx: *mut redmod::RedisModuleCtx,
     rtype: libc::c_int,
     event: *mut u8,
-    key: *mut api::RedisModuleString,
+    key: *mut redmod::RedisModuleString,
 ) -> libc::c_int {
     println!("keyspace_event: {}", rtype);
     return 1;
@@ -86,23 +66,23 @@ extern "C" fn sliced_on_keyspace_event(
 #[allow(unused_variables)]
 #[no_mangle]
 pub extern "C" fn RedisModule_DoLoad(
-    ctx: *mut api::RedisModuleCtx,
-    argv: *mut *mut api::RedisModuleString,
+    ctx: *mut redmod::RedisModuleCtx,
+    argv: *mut *mut redmod::RedisModuleString,
     argc: libc::c_int,
-) -> api::Status {
+) -> redmod::Status {
     unsafe {
         // Bind SDS allocator.
         redis::sds::set_allocator(
-            api::redis_malloc,
-            api::redis_realloc,
-            api::redis_free,
+            redmod::redis_malloc,
+            redmod::redis_realloc,
+            redmod::redis_free,
         );
 
         // Bind allocator to the RedisModule allocator.
         redis::rax::set_allocator(
-            api::redis_malloc,
-            api::redis_realloc,
-            api::redis_free,
+            redmod::redis_malloc,
+            redmod::redis_realloc,
+            redmod::redis_free,
         );
     }
 
@@ -110,11 +90,11 @@ pub extern "C" fn RedisModule_DoLoad(
     // Intercept all commands
     /**********************************************************************/
 
-    if api::subscribe_to_keyspace_events(
+    if redmod::subscribe_to_keyspace_events(
         ctx,
-        api::NotifyFlags::ALL,
-        Some(sliced_on_keyspace_event)) == api::Status::Err {
-        return api::Status::Err;
+        redmod::NotifyFlags::ALL,
+        Some(sliced_on_keyspace_event)) == redmod::Status::Err {
+        return redmod::Status::Err;
     }
 
     /**********************************************************************/
@@ -122,13 +102,13 @@ pub extern "C" fn RedisModule_DoLoad(
     /**********************************************************************/
 
     // Create native Redis types
-    if types::load(ctx) == api::Status::Err {
-        return api::Status::Err;
+    if types::load(ctx) == redmod::Status::Err {
+        return redmod::Status::Err;
     }
 
     // Stream Data Type
-    if stream::data_type::load(ctx) == api::Status::Err {
-        return api::Status::Err;
+    if stream::data_type::load(ctx) == redmod::Status::Err {
+        return redmod::Status::Err;
     }
 
     /**********************************************************************/
@@ -136,22 +116,22 @@ pub extern "C" fn RedisModule_DoLoad(
     /**********************************************************************/
 
     // Load version commands
-    if cmd::version::load(ctx, argv, argc) == api::Status::Err {
-        return api::Status::Err;
+    if cmd::version::load(ctx, argv, argc) == redmod::Status::Err {
+        return redmod::Status::Err;
     }
 
     // Load throttle commands
-    if cmd::throttle::load(ctx, argv, argc) == api::Status::Err {
-        return api::Status::Err;
+    if cmd::throttle::load(ctx, argv, argc) == redmod::Status::Err {
+        return redmod::Status::Err;
     }
 
     // Load stream commands
-    if cmd::stream::load(ctx, argv, argc) == api::Status::Err {
-        return api::Status::Err;
+    if cmd::stream::load(ctx, argv, argc) == redmod::Status::Err {
+        return redmod::Status::Err;
     }
 
     println!("slice/d module loaded... Happy slicing!");
-    api::Status::Ok
+    redmod::Status::Ok
 }
 
 

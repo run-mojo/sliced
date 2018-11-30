@@ -10,9 +10,17 @@ mod unix;
 use winapi;
 #[cfg(windows)]
 use self::windows::MmapInner;
+#[cfg(windows)]
+pub use self::windows::fs_stats;
+#[cfg(windows)]
+pub use self::windows::page_size;
 
 #[cfg(unix)]
 use self::unix::MmapInner;
+#[cfg(unix)]
+pub use self::unix::fs_stats;
+#[cfg(unix)]
+pub use self::unix::page_size;
 
 use std::fmt;
 use std::fs::File;
@@ -20,6 +28,15 @@ use std::io::{Error, ErrorKind, Result};
 use std::slice;
 use std::usize;
 use std::ops::{Deref, DerefMut};
+
+/// Local file-system stats 'statvfs' or equivalent on non-unix systems.
+pub struct FsStats {
+    pub block_size: usize,
+    pub io_size: usize,
+    pub total_blocks: usize,
+    pub avail_blocks: usize,
+    pub name_max_len: u32,
+}
 
 /// A memory map builder, providing advanced options and flags for specifying memory map behavior.
 ///

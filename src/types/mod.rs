@@ -1,24 +1,24 @@
 extern crate libc;
 
-use crate::redis::api;
+use crate::redis::redmod;
 
 #[allow(unused_variables)]
 pub struct DataTypes {
 //    histogram: HistogramType
 }
 
-pub fn load(ctx: *mut api::RedisModuleCtx) -> api::Status {
-    api::create_data_type(ctx,
-                          format!("{}\0", "histogram").as_ptr(),
-                          0,
-                          Some(HistogramType::Histogram_RDBLoad),
-                          Some(HistogramType::Histogram_RDBSave),
-                          Some(HistogramType::Histogram_AOFRewrite),
-                          Some(HistogramType::Histogram_MemUsage),
-                          Some(HistogramType::Histogram_Digest),
-                          Some(HistogramType::Histogram_Free));
+pub fn load(ctx: *mut redmod::RedisModuleCtx) -> redmod::Status {
+    redmod::create_data_type(ctx,
+                             format!("{}\0", "histogram").as_ptr(),
+                             0,
+                             Some(HistogramType::Histogram_RDBLoad),
+                             Some(HistogramType::Histogram_RDBSave),
+                             Some(HistogramType::Histogram_AOFRewrite),
+                             Some(HistogramType::Histogram_MemUsage),
+                             Some(HistogramType::Histogram_Digest),
+                             Some(HistogramType::Histogram_Free));
 
-    return api::Status::Ok;
+    return redmod::Status::Ok;
 }
 
 pub struct HistogramType;
@@ -33,7 +33,7 @@ impl HistogramType {
     #[allow(non_snake_case)]
     #[allow(unused_variables)]
     #[no_mangle]
-    pub extern "C" fn Histogram_RDBLoad(rdb: *mut api::RedisModuleIO,
+    pub extern "C" fn Histogram_RDBLoad(rdb: *mut redmod::RedisModuleIO,
                                         encver: libc::c_int) {
 //        log_debug!(self, "Histogram_RDBLoad");
         println!("Histogram_RDBLoad");
@@ -42,7 +42,7 @@ impl HistogramType {
     #[allow(non_snake_case)]
     #[allow(unused_variables)]
     #[no_mangle]
-    pub extern "C" fn Histogram_RDBSave(rdb: *mut api::RedisModuleIO,
+    pub extern "C" fn Histogram_RDBSave(rdb: *mut redmod::RedisModuleIO,
                                         value: *mut u8) {
 //        log_debug!(self, "{} [began] args = {:?}", command, args);
         println!("Histogram_RDBSave");
@@ -51,8 +51,8 @@ impl HistogramType {
     #[allow(non_snake_case)]
     #[allow(unused_variables)]
     #[no_mangle]
-    pub extern "C" fn Histogram_AOFRewrite(rdb: *mut api::RedisModuleIO,
-                                           key: *mut api::RedisModuleString,
+    pub extern "C" fn Histogram_AOFRewrite(rdb: *mut redmod::RedisModuleIO,
+                                           key: *mut redmod::RedisModuleString,
                                            value: *mut u8) {
         println!("Histogram_AOFRewrite");
     }
@@ -60,8 +60,8 @@ impl HistogramType {
     #[allow(non_snake_case)]
     #[allow(unused_variables)]
     #[no_mangle]
-    pub extern "C" fn Histogram_MemUsage(rdb: *mut api::RedisModuleIO,
-                                         key: *mut api::RedisModuleString,
+    pub extern "C" fn Histogram_MemUsage(rdb: *mut redmod::RedisModuleIO,
+                                         key: *mut redmod::RedisModuleString,
                                          value: *mut u8) -> libc::size_t {
         println!("Histogram_MemUsage");
         return 0;
@@ -70,7 +70,7 @@ impl HistogramType {
     #[allow(non_snake_case)]
     #[allow(unused_variables)]
     #[no_mangle]
-    pub extern "C" fn Histogram_Digest(digest: *mut api::RedisModuleDigest,
+    pub extern "C" fn Histogram_Digest(digest: *mut redmod::RedisModuleDigest,
                                        value: *mut u8) {
         println!("Histogram_Digest");
     }

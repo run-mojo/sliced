@@ -1717,7 +1717,7 @@ extern "C" {
 
     pub static RedisModule_Replicate:
     extern "C" fn(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
     ) -> Status;
@@ -1841,11 +1841,11 @@ extern "C" {
 ///
 pub mod call1 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-    ) -> *mut crate::redis::api::RedisModuleCallReply {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+    ) -> *mut crate::redis::redmod::RedisModuleCallReply {
         unsafe { RedisModule_Call(ctx, cmdname, fmt, arg0) }
     }
 
@@ -1853,11 +1853,11 @@ pub mod call1 {
     extern "C" {
         pub static RedisModule_Call:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-        ) -> *mut crate::redis::api::RedisModuleCallReply;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+        ) -> *mut crate::redis::redmod::RedisModuleCallReply;
     }
 }
 
@@ -1866,11 +1866,11 @@ pub mod call1 {
 ///
 pub mod replicate1 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-    ) -> crate::redis::api::Status {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+    ) -> crate::redis::redmod::Status {
         unsafe { RedisModule_Replicate(ctx, cmdname, fmt, arg0) }
     }
 
@@ -1878,11 +1878,11 @@ pub mod replicate1 {
     extern "C" {
         pub static RedisModule_Replicate:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-        ) -> crate::redis::api::Status;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+        ) -> crate::redis::redmod::Status;
     }
 }
 
@@ -1891,12 +1891,12 @@ pub mod replicate1 {
 ///
 pub mod call2 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-        arg1: *mut crate::redis::api::RedisModuleString,
-    ) -> *mut crate::redis::api::RedisModuleCallReply {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+        arg1: *mut crate::redis::redmod::RedisModuleString,
+    ) -> *mut crate::redis::redmod::RedisModuleCallReply {
         unsafe { RedisModule_Call(ctx, cmdname, fmt, arg0, arg1) }
     }
 
@@ -1904,12 +1904,12 @@ pub mod call2 {
     extern "C" {
         pub static RedisModule_Call:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-            arg1: *mut crate::redis::api::RedisModuleString,
-        ) -> *mut crate::redis::api::RedisModuleCallReply;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+            arg1: *mut crate::redis::redmod::RedisModuleString,
+        ) -> *mut crate::redis::redmod::RedisModuleCallReply;
     }
 }
 
@@ -1918,12 +1918,12 @@ pub mod call2 {
 ///
 pub mod replicate2 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-        arg1: *mut crate::redis::api::RedisModuleString,
-    ) -> crate::redis::api::Status {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+        arg1: *mut crate::redis::redmod::RedisModuleString,
+    ) -> crate::redis::redmod::Status {
         unsafe { RedisModule_Replicate(ctx, cmdname, fmt, arg0, arg1) }
     }
 
@@ -1931,12 +1931,12 @@ pub mod replicate2 {
     extern "C" {
         pub static RedisModule_Replicate:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-            arg1: *mut crate::redis::api::RedisModuleString,
-        ) -> crate::redis::api::Status;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+            arg1: *mut crate::redis::redmod::RedisModuleString,
+        ) -> crate::redis::redmod::Status;
     }
 }
 
@@ -1945,13 +1945,13 @@ pub mod replicate2 {
 ///
 pub mod call3 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-        arg1: *mut crate::redis::api::RedisModuleString,
-        arg2: *mut crate::redis::api::RedisModuleString,
-    ) -> *mut crate::redis::api::RedisModuleCallReply {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+        arg1: *mut crate::redis::redmod::RedisModuleString,
+        arg2: *mut crate::redis::redmod::RedisModuleString,
+    ) -> *mut crate::redis::redmod::RedisModuleCallReply {
         unsafe { RedisModule_Call(ctx, cmdname, fmt, arg0, arg1, arg2) }
     }
 
@@ -1959,13 +1959,13 @@ pub mod call3 {
     extern "C" {
         pub static RedisModule_Call:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-            arg1: *mut crate::redis::api::RedisModuleString,
-            arg2: *mut crate::redis::api::RedisModuleString,
-        ) -> *mut crate::redis::api::RedisModuleCallReply;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+            arg1: *mut crate::redis::redmod::RedisModuleString,
+            arg2: *mut crate::redis::redmod::RedisModuleString,
+        ) -> *mut crate::redis::redmod::RedisModuleCallReply;
     }
 }
 
@@ -1974,13 +1974,13 @@ pub mod call3 {
 ///
 pub mod replicate3 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-        arg1: *mut crate::redis::api::RedisModuleString,
-        arg2: *mut crate::redis::api::RedisModuleString,
-    ) -> crate::redis::api::Status {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+        arg1: *mut crate::redis::redmod::RedisModuleString,
+        arg2: *mut crate::redis::redmod::RedisModuleString,
+    ) -> crate::redis::redmod::Status {
         unsafe { RedisModule_Replicate(ctx, cmdname, fmt, arg0, arg1, arg2) }
     }
 
@@ -1988,13 +1988,13 @@ pub mod replicate3 {
     extern "C" {
         pub static RedisModule_Replicate:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-            arg1: *mut crate::redis::api::RedisModuleString,
-            arg2: *mut crate::redis::api::RedisModuleString,
-        ) -> crate::redis::api::Status;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+            arg1: *mut crate::redis::redmod::RedisModuleString,
+            arg2: *mut crate::redis::redmod::RedisModuleString,
+        ) -> crate::redis::redmod::Status;
     }
 }
 
@@ -2003,14 +2003,14 @@ pub mod replicate3 {
 ///
 pub mod call4 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-        arg1: *mut crate::redis::api::RedisModuleString,
-        arg2: *mut crate::redis::api::RedisModuleString,
-        arg3: *mut crate::redis::api::RedisModuleString,
-    ) -> *mut crate::redis::api::RedisModuleCallReply {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+        arg1: *mut crate::redis::redmod::RedisModuleString,
+        arg2: *mut crate::redis::redmod::RedisModuleString,
+        arg3: *mut crate::redis::redmod::RedisModuleString,
+    ) -> *mut crate::redis::redmod::RedisModuleCallReply {
         unsafe { RedisModule_Call(ctx, cmdname, fmt, arg0, arg1, arg2, arg3) }
     }
 
@@ -2018,14 +2018,14 @@ pub mod call4 {
     extern "C" {
         pub static RedisModule_Call:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-            arg1: *mut crate::redis::api::RedisModuleString,
-            arg2: *mut crate::redis::api::RedisModuleString,
-            arg3: *mut crate::redis::api::RedisModuleString,
-        ) -> *mut crate::redis::api::RedisModuleCallReply;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+            arg1: *mut crate::redis::redmod::RedisModuleString,
+            arg2: *mut crate::redis::redmod::RedisModuleString,
+            arg3: *mut crate::redis::redmod::RedisModuleString,
+        ) -> *mut crate::redis::redmod::RedisModuleCallReply;
     }
 }
 
@@ -2034,14 +2034,14 @@ pub mod call4 {
 ///
 pub mod replicate4 {
     pub fn call(
-        ctx: *mut crate::redis::api::RedisModuleCtx,
+        ctx: *mut crate::redis::redmod::RedisModuleCtx,
         cmdname: *const u8,
         fmt: *const u8,
-        arg0: *mut crate::redis::api::RedisModuleString,
-        arg1: *mut crate::redis::api::RedisModuleString,
-        arg2: *mut crate::redis::api::RedisModuleString,
-        arg3: *mut crate::redis::api::RedisModuleString,
-    ) -> crate::redis::api::Status {
+        arg0: *mut crate::redis::redmod::RedisModuleString,
+        arg1: *mut crate::redis::redmod::RedisModuleString,
+        arg2: *mut crate::redis::redmod::RedisModuleString,
+        arg3: *mut crate::redis::redmod::RedisModuleString,
+    ) -> crate::redis::redmod::Status {
         unsafe { RedisModule_Replicate(ctx, cmdname, fmt, arg0, arg1, arg2, arg3) }
     }
 
@@ -2049,13 +2049,13 @@ pub mod replicate4 {
     extern "C" {
         pub static RedisModule_Replicate:
         extern "C" fn(
-            ctx: *mut crate::redis::api::RedisModuleCtx,
+            ctx: *mut crate::redis::redmod::RedisModuleCtx,
             cmdname: *const u8,
             fmt: *const u8,
-            arg0: *mut crate::redis::api::RedisModuleString,
-            arg1: *mut crate::redis::api::RedisModuleString,
-            arg2: *mut crate::redis::api::RedisModuleString,
-            arg3: *mut crate::redis::api::RedisModuleString,
-        ) -> crate::redis::api::Status;
+            arg0: *mut crate::redis::redmod::RedisModuleString,
+            arg1: *mut crate::redis::redmod::RedisModuleString,
+            arg2: *mut crate::redis::redmod::RedisModuleString,
+            arg3: *mut crate::redis::redmod::RedisModuleString,
+        ) -> crate::redis::redmod::Status;
     }
 }

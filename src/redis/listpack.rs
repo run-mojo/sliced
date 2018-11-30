@@ -2293,9 +2293,9 @@ pub fn delete<'a, A>(
     }
 }
 
-//===----------------------------------------------------------------------===//
+////////////////////////////////////////////////////////////////////////////////
 // Iterate
-//===----------------------------------------------------------------------===//
+////////////////////////////////////////////////////////////////////////////////
 
 pub fn iter<F>(lp: listpack, f: F) where F: Fn(element, Value) -> bool {
     match first(lp) {
@@ -2481,9 +2481,9 @@ impl Into<Value> for f32 {
 impl From<Value> for f32 {
     #[inline]
     fn from(v: Value) -> Self {
-        match &v {
-            &Value::Int(i) => Self::from_bits(i as u32),
-            &Value::String(ptr, len) => unsafe {
+        match v {
+            Value::Int(i) => Self::from_bits(i as u32),
+            Value::String(ptr, len) => unsafe {
                 match len {
                     1 => *ptr as u8 as Self,
                     2 => f32::from_bits(
@@ -2518,9 +2518,9 @@ impl Into<Value> for f64 {
 impl From<Value> for f64 {
     #[inline]
     fn from(v: Value) -> Self {
-        match &v {
-            &Value::Int(i) => Self::from_bits(i as u64),
-            &Value::String(ptr, len) => unsafe {
+        match v {
+            Value::Int(i) => Self::from_bits(i as u64),
+            Value::String(ptr, len) => unsafe {
                 match len {
                     1 => *ptr as u8 as Self,
                     2 => f64::from_bits(
@@ -2676,7 +2676,7 @@ macro_rules! impl_str_int {
         impl Str for $t {
             #[inline]
             fn as_value(&mut self) -> Value {
-                unsafe { *self = self.to_le(); }
+                *self = self.to_le();
                 Value::String(
                     self as *const _ as *const u8,
                     std::mem::size_of::<Self>() as u32

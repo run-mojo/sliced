@@ -1,0 +1,188 @@
+Flags:
+ - "a" = Archived
+ - "d" = Downloading - Incomplete file
+ - "w" = Writing
+
+File Naming Convention:
+
+If the first char is a letter then it indicates something about the segment.
+
+
+Archiving Process:
+
+    1. Create a new file with the same segment name with the "u" flag. On recovery, we can pick it back up.
+    2.
+
+
+a00000001-0 = Archived flag - Immutable archived file. If entry without 'a' exists then it is available locally.
+d00000001-0 = Downloading flag - Once completed it will remove 'd' flag
+u00000001-0 = Uploading flag - Once completed it will remove 'd' flag
+10000001-0
+20000001-0
+
+10000001-0-20000001-0 - Merging - 2 segments are becoming
+w30000001-0 = Writer flag (requires recovery if discovered on start)
+
+w0 = Future writer
+
+
+AOF / REPLICATION
+
+Segment files have the StreamID in the name of the file. When preparing the next segment we do not know
+what the ID will be until we write the first ID. In order to atomically ensure we do not lose the ID we
+write to AOF and RDB of the internal desire to create a new segment.
+
+MO.X SEG CREATE mystream 100000098-0
+
+When rewriting the AOF we can omit this statement if we can guarantee the file and it's name is durable.
+In addition to that assurance, we'll keep the last few segments meta data in the AOF and RDB as some
+extra insurance.
+
+
+
+Cache Management:
+
+    PINNED
+    LRU
+
+Once a segment is archived it is unpinned from local file-system cache and may be evicted. A LRU caching
+system is utilized to determine which segments can be deleted locally.
+
+
+Stream AOF:
+    Each stream has it's own log
+
+    Commands
+        STREAM
+        SEGMENT
+        ARCHIVE
+        ARCHIVE_FAILED
+        ARCHIVE_COMPLETE
+
+
+    ADD = Add Segment
+    UP  = Upload Segment to Object Store
+    UP+ = Upload Segment completed w/ url "http://s3.amazonaws.com/mojo/bucket/stream/folder/segment"
+    UP-
+    DOWN
+    DOWN+
+    DOWN-
+
+
+    ADD 3
+    ADD 4
+    UP  3
+    GC 3
+    FOLD 3 10
+
+    DOWN 10000029-0
+
+
+
+    Unknown = Startup state
+
+
+    Dir
+        0.dict
+        0001
+            0001
+            0002
+            0003
+
+        0002
+            0004
+            0005
+
+        0003
+            0006
+            0007
+
+
+ADD SEGMENT
+
+ - Open Stream AOF and append "ADD" entry
+ - fsync
+ - Create file
+
+
+SEGMENT FILE FORMAT
+
+MASTER ID (128bit)
+    MS
+    SEQ
+
+Sequence Type:
+
+MESSAGE TYPE
+    PACK
+    INDEX
+
+
+PACK > [P > PACK > [I > INDEX > SUFFIX
+
+PACK = (Disk Listpack)
+    MASTER ID - (16 bytes)
+        master_ms = (string) u64
+        master_seq = (string) u64
+
+    MASTER ENTRY
+        // count (int)
+        // deleted (int)
+        num_fields (int)
+        fields[n] (n = num_fields) (any)
+        0 (null) *int
+
+    ENTRY [count]
+        flags (int)
+        id_ms (int)
+        id_seq (int)
+        num_fields(int)
+            FIELD [num_fields]
+                key (any)
+                value (any)
+
+      OR (flag & SAMEFIELDS)
+
+        flags (int)
+        id_ms (int)
+        id_seq (int)
+            FIELD [master_num_fields]
+                value (any)
+
+    EOF (0xFF) = Terminates entries
+
+    HEADER (8 bytes)
+        bytes    (u32 little-endian)
+        lp_count (u16 little-endian)
+        count    (u16 little-endian)
+
+
+INDEX = (Packs Index)
+    ENTRY
+        id_ms (int)
+        id_seq (int)
+        offset (string(32bit int))
+        length (int)
+    0 (null)
+
+SUFFIX (32 bytes)
+    id_ms (string) 64bit unsigned int
+    id_seq (string) 64bit unsigned int
+    index_len (string) 32bit unsigned int   = Index length in bytes
+    count (string) 32bit unsigned int       = Record Count
+    reserved (8 bytes)
+    EOF
+    EOF
+
+
+
+
+RECOVERY
+    Files should end with FOOTER(32 bytes) EOF EOF
+    Segments can be read sequentially to rebuild INDEX and FOOTER
+
+    Try reading backwards until EOF EOF is found
+        If yes then attempt to read FOOTER and INDEX
+        If no then do full rebuild
+
+

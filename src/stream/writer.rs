@@ -39,6 +39,91 @@ pub struct StreamArchiveStats {
     total_size_compressed: u64,
 }
 
+struct SegmentReader {
+    /// When None, file needs to be located and opened on BG thread.
+    file: Arc<Mutex<Option<mmap::Mmap>>>,
+    /// Pack index
+    packs: map::RcRax<StreamID, Pack>,
+}
+
+struct SegmentWriter {
+    /// Active AOF.
+    /// Path = {root_dir}/stream_id/0.dat
+    /// Protected by a spin Mutex since it is shared with an I/O thread.
+    aof: Option<Arc<Mutex<aof::AOF>>>,
+    /// Last used StreamID. The next ID must be greater than the previous.
+    last_id: StreamID,
+    /// Master ID of the tail pack.
+    /// All record IDs within listpack are delta encoded from the master
+    /// except for the first record in which case it "is" the ID.
+    tail_master_id: StreamID,
+    /// The last pack of the segment. New writes go here.
+    tail: Option<Rc<Pack>>,
+    /// Number of master fields.
+    tail_num_fields: u16,
+    /// Pointer to the first field if "tail_num_fields" > 0 else null_mut()
+    tail_fields: listpack::element,
+    /// Size of tail Pack's memory allocation. The StreamWriter will take
+    /// care of reallocating the tail as necessary and according to the
+    /// configuration.
+    tail_alloc: u32,
+
+}
+
+struct SegmentContinuation {
+
+}
+
+struct SegmentFutures {
+    read: RaxMap<StreamID, SegmentContinuation>
+}
+
+///
+struct SegmentModel {
+    handle: SegmentHandle,
+    ///
+    packs: map::RcRax<StreamID, Pack>,
+    futures: RaxMap<u64, u64>,
+}
+
+impl SegmentModel {
+    pub fn new() {
+
+    }
+}
+
+enum SegmentHandle {
+    /// File should be on local file-system, but it is not currently open.
+    Local,
+
+    /// Currently waiting on background to finish opening.
+    Opening(Vec<u64>),
+
+    ///
+    Immutable(Arc<Mutex<mmap::Mmap>>),
+
+    /// File is opened
+    Mutable(Arc<Mutex<mmap::MmapMut>>),
+
+    /// File should be on remote file-system only and needs to
+    /// be downloaded and upgraded to local to access it.
+    Archived,
+
+    /// File is currently in the process of moving from
+    /// archive storage to local file-system.
+    Downloading(u64, u64),
+
+    ///
+    Uploading(Arc<Mutex<mmap::Mmap>>),
+
+    /// File should be on remote file-system only and needs to
+    /// be downloaded and upgraded to local to access it.
+    LocalAndArchived,
+
+    ///
+    Error(String),
+}
+
 /// Mutations to a stream is managed by the StreamWriter.
 pub struct StreamWriter {
     stream: Rc<Stream>,
@@ -64,7 +149,9 @@ pub struct StreamWriter {
     tail_num_fields: u16,
     /// Pointer to the first field if "tail_num_fields" > 0 else null_mut()
     tail_fields: listpack::element,
-    /// Size of tail Pack's memory allocation.
+    /// Size of tail Pack's memory allocation. The StreamWriter will take
+    /// care of reallocating the tail as necessary and according to the
+    /// configuration.
     tail_alloc: u32,
 
     /// Next segment that is prepared.
@@ -531,4 +618,23 @@ impl StreamWriter {
     pub fn recover(&mut self) {}
 
     pub fn append_file(&mut self, lp_write: listpack::WriteResult) {}
+}
+
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn segment() {
+        println!("segment");
+
+        let mut model = SegmentModel {
+            handle: SegmentHandle::Local,
+            packs: map::RcRax::new(),
+            futures: RaxMap::new(),
+        };
+
+
+    }
 }

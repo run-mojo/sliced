@@ -1,13 +1,9 @@
-#![feature(global_allocator, allocator_api, heap_api)]
+#![feature(allocator_api)]
+#![feature(async_await, await_macro, pin, arbitrary_self_types, futures_api)]
 
 extern crate chrono;
 extern crate env_logger;
-#[macro_use]
-extern crate rand;
-extern crate sliced;
-extern crate spin;
-extern crate tempdir;
-extern crate time;
+//#[macro_use]
 //extern crate futures;
 //extern crate tokio;
 //extern crate tokio_codec;
@@ -19,23 +15,31 @@ extern crate time;
 //extern crate tokio_threadpool;
 //extern crate tokio_timer;
 extern crate libc;
+#[macro_use]
+extern crate rand;
+extern crate sliced;
+extern crate spin;
+extern crate tempdir;
+extern crate time;
+//extern crate hyper;
 
+//use futures::{future, join, pending, Poll, poll, select, try_join};
+//use futures::channel::oneshot;
+//use futures::executor::block_on;
 //use futures::Future;
 //use futures::future::Map;
 //use futures::future::poll_fn;
 //use futures::prelude::*;
 //use futures::sync::oneshot;
 use rand::{Rng, thread_rng};
+use sliced::alloc::*;
 use sliced::mmap::*;
 use sliced::mmap::MmapMut;
-use sliced::page_size;
 use sliced::redis::listpack::*;
-use sliced::alloc::*;
 use sliced::redis::rax::*;
 use sliced::redis::sds::*;
 use sliced::stream::*;
 use sliced::stream::id::*;
-
 use spin::RwLock;
 use std::cmp::Ordering;
 use std::fmt;
@@ -50,63 +54,62 @@ use std::sync::Arc;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
+use std::cell::{Cell, RefCell, UnsafeCell};
 use tempdir::TempDir;
-//use tokio_fs::*;
-//use tokio_io::io;
-//use tokio_threadpool::*;
 
-
-//#[global_allocator]
-//static GLOBAL: sliced::alloc::RedisAllocator = sliced::alloc::RedisAllocator;
-
-
-fn main() {
+fn main() -> Result<(), StreamError> {
     let mut manager = StreamManager::new(
         SDS::new("mybucket"),
-        std::path::Path::new("/Users/clay/sliced")
-    );
-    let mut size: usize = 1024 * 2;
-    println!("PageSize: {}", sliced::page_size::get());
-//    println!("RedisModule_Alloc -> {}", sliced::redis::api::RedisModule_Alloc);
+        std::path::Path::new("/Users/clay/.sliced"),
+    )?;
+
+    let mut stream: Rc<UnsafeCell<Stream>> = manager.create_stream(SDS::new("mystream"))?;
+
+    let ss = unsafe { &mut *stream.get() };
+
+//    let mut mut_stream = stream.as_ref();
+
+    let mut lp = Listpack::new();
+    lp.append(0); // MS
+    lp.append(0); // Seq
+    lp.append(10); // Offset
+    lp.append(54); // Size
+    lp.append(8); // Count
 
     let mut record_id = StreamID { ms: 0, seq: 0 };
 
-    for i in 0..10 {
-//        println!("{}", size.next_power_of_two());
-//        size = size + 1;
-//        size = size.next_power_of_two();
-
+    for _i in 0..10 {
         record_id = next_id(&record_id);
-//        let record = Record {};
-//        s.append(&mut record_id, &record);
     }
+
+    Ok(())
 }
 
-fn main1() {
-    use std::sync::Arc;
-    use std::thread;
-
-    let five = Arc::new(5);
-
-    let mut v:Vec<std::thread::JoinHandle<()>> = vec![];
-
-    for _ in 0..10 {
-        let five = Arc::clone(&five);
-
-
-        v.push(thread::spawn(move || {
-            println!("{:?}", five);
-//            println!("{}", five);
-            println!("Ref Count: {}", Arc::strong_count(&five));
-        }));
-    }
-
-    for a in v {
-        a.join();
-    }
-
-    println!("Ref Count: {}", Arc::strong_count(&five));
-}
+//fn main1() {
+//    use std::sync::Arc;
+//    use std::thread;
+//
+//    let five = Arc::new(5);
+//
+//    let mut v: Vec<std::thread::JoinHandle<()>> = vec![];
+//
+//    for _ in 0..10 {
+//        let five = Arc::clone(&five);
+//
+//
+//        v.push(thread::spawn(move || {
+//            println!("{:?}", five);
+////            println!("{}", five);
+//            println!("Ref Count: {}", Arc::strong_count(&five));
+//        }));
+//    }
+//
+//    for a in v {
+//        a.join();
+//    }
+//
+//    println!("Ref Count: {}", Arc::strong_count(&five));
+//}
 
 
 //fn main2() {

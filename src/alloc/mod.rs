@@ -45,7 +45,7 @@ pub fn non_zeroed<'a, T>() -> &'a mut T where T: Sized {
 }
 
 #[inline(always)]
-pub fn zeroed<'a, T>() -> &'a mut T where T: Sized {
+pub fn zeroed<'a, T: 'a>() -> &'a mut T where T: Sized {
     unsafe {
         let p = &mut *(alloc(mem::size_of::<T>()) as *mut T);
         ptr::write_bytes(p, 0, mem::size_of::<T>());
@@ -148,39 +148,11 @@ pub fn boxed<'a, T>(val: T) -> Box<T>
     }
 }
 
-///
-#[inline(always)]
-pub fn boxed_non_null<'a, T>(val: T) -> ptr::NonNull<T>
-    where T: Sized {
-    unsafe {
-        // Create a heap allocation.
-        let p = alloc(mem::size_of::<T>());
-
-        // Copy in place.
-        ptr::copy_nonoverlapping(
-            &val as *const _ as *const u8,
-            p,
-            mem::size_of::<T>(),
-        );
-
-        // Protect against double free.
-        mem::forget(val);
-        Box::into_raw_non_null(
-            Box::from_raw(p as *mut T)
-        )
-    }
-}
-
 #[inline(always)]
 pub fn free<'a, T>(val: &'a mut T) where T: Sized {
     unsafe {
         dealloc(val as *mut _ as *mut u8)
     }
-}
-
-#[inline]
-pub(crate) unsafe fn box_free<T: ?Sized>(p: ptr::Unique<T>) {
-    dealloc(p.as_ptr() as *mut _ as *mut u8);
 }
 
 

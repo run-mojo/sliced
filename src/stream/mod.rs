@@ -3,7 +3,7 @@ use crate::redis::listpack;
 use crate::redis::listpack::Listpack;
 use crate::redis::rax::{RaxMap, RaxRcMap};
 use crate::redis::sds::SDS;
-
+use self::id::{next_id, StreamID};
 use spin::Mutex;
 use std::error::Error;
 use std::fmt;
@@ -12,6 +12,8 @@ use std::ptr;
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, Weak as ArcWeak};
 use std::sync::atomic;
+use std::cell::{Cell, RefCell, UnsafeCell};
+use super::*;
 
 
 pub mod id;
@@ -23,8 +25,6 @@ pub mod writer;
 pub mod io;
 pub mod data_type;
 
-use self::id::{next_id, StreamID};
-
 pub const DEFAULT_PACK_SIZE: u32 = 65500;
 // ~64KB
 pub const DEFAULT_SEGMENT_SIZE: u32 = 1024 * 1024 * 64 - 64; // ~64MB
@@ -34,6 +34,7 @@ pub const COMPRESS_LZ4: i32 = 1;
 pub const COMPRESS_ZSTD: i32 = 2;
 
 pub static mut DEFAULT_MAX_IO_BACKLOG: usize = 25000;
+
 pub fn max_io_backlog() -> usize {
     unsafe { DEFAULT_MAX_IO_BACKLOG }
 }
@@ -93,6 +94,10 @@ impl Error for StreamError {
             _ => "Error"
         }
     }
+}
+
+pub enum StreamState {
+
 }
 
 /// slice/d Stream Redis Data Type. This is the core structure. It utilizes
@@ -163,7 +168,7 @@ pub struct Stream {
     /// A segment can be in two states.
     /// 1. Not Loaded (null in rax)
     /// 2. Loaded (ptr in rax)
-    segments: map::StreamIDMap<Segment>,
+    segments: map::RcRax<StreamID, Segment>,
 
     /// Each stream has a single writer which has the tail segment.
     writer: Option<writer::StreamWriter>,
@@ -172,7 +177,7 @@ pub struct Stream {
     config: StreamConfig,
 
     /// Consumer groups.
-    groups: Option<RaxMap<&'static [u8], ConsumerGroup>>,
+    groups: Option<RaxMap<u64, ConsumerGroup>>,
 }
 
 impl Drop for Stream {
@@ -214,7 +219,7 @@ pub struct Segment {
     /// The pack index must be all inclusive of the entire segment.
     /// However, each packs data may be faulted in and freed based
     /// on demand.
-    packs: map::StreamIDMap<Pack>,
+    packs: map::RcRax<StreamID, Pack>,
 }
 
 impl Segment {
@@ -355,15 +360,15 @@ pub type Pin = Rc<Pack>;
 struct ConsumerGroup {
     /// Deduplication check.
     /// If key exists, but NACK is null then request is rejected.
-    dupe: Option<RaxMap<&'static [u8], NACK>>,
-    pending: RaxMap<StreamID, NACK>,
+    dupe: Option<RaxMap<u64, NAck>>,
+    pending: map::RcRax<StreamID, NAck>,
 
     /// Reserve the
     pins: Vec<Rc<Pack>>,
 }
 
 /// Pending (not yet acknowledged) message in a consumer group.
-struct NACK {
+struct NAck {
     delivery_time: u64,
     delivery_count: u64,
     consumer: Rc<Consumer>,
@@ -371,9 +376,10 @@ struct NACK {
 }
 
 struct Consumer {
-    pending: RaxMap<StreamID, NACK>,
+    pending: map::RcRax<StreamID, NAck>,
 }
 
+static mut MANAGER: Option<StreamManager> = None;
 
 /// In charge of creating, reading, writing and archiving segment data.
 /// Segments have an in-memory and blob representations. Blob is used for
@@ -386,63 +392,69 @@ struct Consumer {
 /// Rust's future API is used for operating on segment data away from the
 /// event-loop. The segment manager receives all requests.
 pub struct StreamManager {
+    next_stream_id: u64,
     /// The maximum amount of RAM that is allowed for the collective
     /// usage of all Streams and all of it's in-memory representations.
     max_memory: u64,
-    mem_usage: atomic::AtomicUsize,
+    mem_usage: u64,
     dir: &'static Path,
     bucket: SDS,
-    streams: RaxRcMap<SDS, Stream>,
-    data: Mutex<RaxMap<u64, Rc<Listpack>>>,
-    pins: RaxMap<u64, Pin>,
+    streams: map::RcRax<SDS, UnsafeCell<Stream>>,
+    storage: io::StorageService,
 }
 
 impl StreamManager {
-    pub fn new(bucket: SDS, path: &'static Path) -> StreamManager {
-        StreamManager {
+    pub fn new(bucket: SDS, path: &'static Path) -> Result<StreamManager, StreamError> {
+        let storage = io::StorageService::start(path.clone())?;
+        Ok(StreamManager {
+            next_stream_id: 1,
             max_memory: 0,
-            mem_usage: atomic::AtomicUsize::new(0),
+            mem_usage: 0,
             dir: path.clone(),
-            bucket: bucket,
-            streams: RaxRcMap::new(),
-            data: Mutex::new(RaxMap::new()),
-            pins: RaxMap::new(),
-        }
+            bucket,
+            streams: map::RcRax::new(),
+            storage,
+        })
     }
 
-    pub fn create_stream(&mut self, name: SDS) -> Result<Rc<Stream>, StreamError> {
+    pub fn create_stream(&mut self, name: SDS) -> Result<Rc<UnsafeCell<Stream>>, StreamError> {
         unsafe {
             let mut streams = &mut self.streams;
 
-            let stream = ref_counted(Stream {
-                id: 0,
+            let stream = Rc::new(UnsafeCell::new(Stream {
+                id: self.next_stream_id,
                 mem_usage: 0,
                 disk_usage: 0,
                 name: name.clone(),
                 writer: None,
-                segments: map::StreamIDMap::new(),
+                segments: map::RcRax::new(),
                 config: StreamConfig {
                     max_pack_size: DEFAULT_PACK_SIZE,
                     max_segment_size: DEFAULT_SEGMENT_SIZE,
                     compression: COMPRESS_NONE,
                 },
-                groups: Some(RaxMap::new()),
-            });
+                groups: None,
+            }));
 
-            match streams.try_insert(name, Rc::clone(&stream)) {
+            match streams.try_insert_raw(
+                name.as_ptr(),
+                name.len(),
+                Rc::clone(&stream),
+            ) {
                 Ok(ref existing) => {
                     if existing.is_some() {
                         return Err(StreamError::Exists);
                     }
+
+                    self.next_stream_id += 1;
                 }
                 Err(e) => {
                     match e {
-                        crate::redis::rax::RaxError::OutOfMemory() => return Err(StreamError::OutOfMemory),
+                        StreamError::OutOfMemory => return Err(StreamError::OutOfMemory),
                         _ => return Err(StreamError::Generic(String::new()))
                     }
                 }
             }
-
 
             Ok(stream.clone())
         }
@@ -451,9 +463,10 @@ impl StreamManager {
     fn write(&mut self, stream: Rc<Stream>, id: &StreamID, record: &record::Record) {}
 
     fn add_segment(&mut self, mut stream: Rc<Stream>) {
+        // Get mutable stream.
         let mut s = Rc::get_mut(&mut stream).unwrap();
 
-        let segment_id = match s.last_id() {
+        let mut segment_id = &mut match s.last_id() {
             Some(id) => next_id(&id),
             None => StreamID::default()
         };
@@ -461,13 +474,13 @@ impl StreamManager {
         unsafe {
             let segments = &mut s.segments;
 
-            let segment = Rc::from_raw(crate::alloc::leak_raw(Segment {
+            let segment = Rc::new(Segment {
                 data: None,
-                packs: map::StreamIDMap::new(),
-            }));
+                packs: map::RcRax::new(),
+            });
 
             // Insert into segment Rax.
-            match segments.insert(&segment_id, Rc::clone(&segment)) {
+            match segments.insert(segment_id, Rc::clone(&segment)) {
                 Ok(_) => {}
                 Err(_) => {}
             }
@@ -498,9 +511,12 @@ impl StreamManager {
     pub fn drain_queue(&self) {}
 }
 
+impl Drop for StreamManager {
+    fn drop(&mut self) {
 
+    }
+}
 
-use super::*;
 
 #[cfg(tests)]
 pub mod tests {

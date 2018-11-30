@@ -314,10 +314,27 @@ fn protection_supported(handle: RawHandle, protection: DWORD) -> bool {
     }
 }
 
+#[inline(always)]
+pub fn page_size() -> usize {
+    allocation_granularity()
+}
+
 fn allocation_granularity() -> usize {
     unsafe {
         let mut info = mem::zeroed();
         GetSystemInfo(&mut info);
         return info.dwAllocationGranularity as usize;
+    }
+}
+
+pub fn fs_stats(path: &str) -> super::FsStats {
+    unsafe {
+        super::FsStats {
+            io_size: 0,
+            block_size: 0,
+            total_blocks: 0,
+            avail_blocks: 0,
+            name_max_len: 0,
+        }
     }
 }

@@ -10,3 +10,9 @@ Cargo.lock
 **/*.rs.bk
 
 .idea
+
+*.test
+node_modules
+dist
+yarn.lock
+build

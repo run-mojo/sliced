@@ -20,7 +20,7 @@ use smallvec::SmallVec;
 // warnings thrown from within macros provided by the `bigflags` package.
 #[cfg_attr(feature = "cargo-clippy",
 allow(redundant_field_names, suspicious_arithmetic_impl))]
-pub mod api;
+pub mod redmod;
 #[cfg_attr(feature = "cargo-clippy",
 allow(redundant_field_names, suspicious_arithmetic_impl))]
 pub mod listpack;
@@ -30,7 +30,7 @@ pub mod rax;
 pub mod sds;
 pub mod object;
 
-pub type TimerID = api::RedisModuleTimerID;
+pub type TimerID = redmod::RedisModuleTimerID;
 
 /// `LogLevel` is a level of logging to be specified with a Redis log directive.
 #[derive(Clone, Copy, Debug)]
@@ -53,16 +53,16 @@ pub enum Reply {
     Unknown,
 }
 
-pub type Status = api::Status;
+pub type Status = redmod::Status;
 
 pub trait DataType {
-    fn redis_type(&self) -> &'static api::RedisModuleType;
+    fn redis_type(&self) -> &'static redmod::RedisModuleType;
 
-    fn create(&self) -> &api::RedisModuleType;
+    fn create(&self) -> &redmod::RedisModuleType;
 }
 
 impl DataType {
-    pub fn register(_ctx: *mut api::RedisModuleCtx) {
+    pub fn register(_ctx: *mut redmod::RedisModuleCtx) {
 //        raw::RedisModule_CreateDataType(ctx, )
     }
 }
@@ -87,22 +87,22 @@ impl RedisCommand {
     /// arguments to Rust data types and handles the OK/ERR reply back to Redis.
     pub fn harness<'a>(
         command: &Command,
-        ctx: *mut api::RedisModuleCtx,
-        argv: *mut *mut api::RedisModuleString,
+        ctx: *mut redmod::RedisModuleCtx,
+        argv: *mut *mut redmod::RedisModuleString,
         argc: libc::c_int,
-    ) -> api::Status {
+    ) -> redmod::Status {
         let r = Redis { ctx };
 
         let args = parse_args_old(argv, argc).unwrap();
         let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         match command.run(r, str_args.as_slice()) {
-            Ok(_) => api::Status::Ok,
+            Ok(_) => redmod::Status::Ok,
             Err(e) => {
-                api::reply_with_error(
+                redmod::reply_with_error(
                     ctx,
                     format!("Cell error: {}\0", e.description()).as_ptr(),
                 );
-                api::Status::Err
+                redmod::Status::Err
             }
         }
     }
@@ -128,22 +128,22 @@ impl Command {
     /// arguments to Rust data types and handles the OK/ERR reply back to Redis.
     pub fn harness<'a>(
         command: &Command,
-        ctx: *mut api::RedisModuleCtx,
-        argv: *mut *mut api::RedisModuleString,
+        ctx: *mut redmod::RedisModuleCtx,
+        argv: *mut *mut redmod::RedisModuleString,
         argc: libc::c_int,
-    ) -> api::Status {
+    ) -> redmod::Status {
         let r = Redis { ctx };
 
         let args = parse_args_old(argv, argc).unwrap();
         let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         match command.run(r, str_args.as_slice()) {
-            Ok(_) => api::Status::Ok,
+            Ok(_) => redmod::Status::Ok,
             Err(e) => {
-                api::reply_with_error(
+                redmod::reply_with_error(
                     ctx,
                     format!("Cell error: {}\0", e.description()).as_ptr(),
                 );
-                api::Status::Err
+                redmod::Status::Err
             }
         }
     }
@@ -153,7 +153,7 @@ impl Command {
 /// the Redis module API by abstracting away the raw C FFI calls.
 #[derive(Clone, Copy)]
 pub struct Redis {
-    pub ctx: *mut api::RedisModuleCtx,
+    pub ctx: *mut redmod::RedisModuleCtx,
 }
 
 extern "C" fn sliced_timer_callback(_value: *mut libc::c_void) {
@@ -173,7 +173,7 @@ impl Redis {
     /// time in milliseconds have elapsed.
     pub fn start_timer<F>(&self, millis: i64, f: F) -> TimerID where F: Fn() {
         let mut x = 0 as *mut u8;
-        api::create_timer(
+        redmod::create_timer(
             self.ctx,
             millis,
             Some(sliced_timer_callback_wrapper::<F>),
@@ -184,7 +184,7 @@ impl Redis {
     /// This can be called from background threads.
     pub fn run<F>(&self, f: F) -> TimerID where F: Fn() {
         let mut x = 0 as *mut u8;
-        api::create_timer(
+        redmod::create_timer(
             self.ctx,
             0,
             Some(sliced_timer_callback_wrapper::<F>),
@@ -192,9 +192,9 @@ impl Redis {
     }
 
     /// Cancels a timer by it's ID.
-    pub fn cancel_timer(&self, timer_id: TimerID) -> api::Status {
+    pub fn cancel_timer(&self, timer_id: TimerID) -> redmod::Status {
         let mut x = 0 as *mut u8;
-        api::stop_timer(self.ctx, timer_id, (&mut x) as *mut _ as *mut *mut libc::c_void)
+        redmod::stop_timer(self.ctx, timer_id, (&mut x) as *mut _ as *mut *mut libc::c_void)
     }
 
     ///
@@ -227,21 +227,21 @@ impl Redis {
                 //
                 // Still, this works fine and will continue to work as long as
                 // it's left unchanged.
-                api::call1::call(
+                redmod::call1::call(
                     self.ctx,
                     format!("{}\0", command).as_ptr(),
                     format!("{}\0", format).as_ptr(),
                     terminated_args[0].str_inner,
                 )
             }
-            2 => api::call2::call(
+            2 => redmod::call2::call(
                 self.ctx,
                 format!("{}\0", command).as_ptr(),
                 format!("{}\0", format).as_ptr(),
                 terminated_args[0].str_inner,
                 terminated_args[1].str_inner,
             ),
-            3 => api::call3::call(
+            3 => redmod::call3::call(
                 self.ctx,
                 format!("{}\0", command).as_ptr(),
                 format!("{}\0", format).as_ptr(),
@@ -249,7 +249,7 @@ impl Redis {
                 terminated_args[1].str_inner,
                 terminated_args[2].str_inner,
             ),
-            4 => api::call4::call(
+            4 => redmod::call4::call(
                 self.ctx,
                 format!("{}\0", command).as_ptr(),
                 format!("{}\0", format).as_ptr(),
@@ -264,7 +264,7 @@ impl Redis {
         };
 
         let reply_res = manifest_redis_reply(raw_reply);
-        api::free_call_reply(raw_reply);
+        redmod::free_call_reply(raw_reply);
 
         if let Ok(ref reply) = reply_res {
             log_debug!(self, "{} [ended] result = {:?}", command, reply);
@@ -275,12 +275,12 @@ impl Redis {
 
     ///
     pub fn redis_lock(&self) {
-        return api::thread_safe_context_lock(self.ctx);
+        return redmod::thread_safe_context_lock(self.ctx);
     }
 
     ///
     pub fn redis_unlock(&self) {
-        return api::thread_safe_context_unlock(self.ctx);
+        return redmod::thread_safe_context_unlock(self.ctx);
     }
 
     /// Coerces a Redis string as an integer.
@@ -313,7 +313,7 @@ impl Redis {
 
     ///
     pub fn log(&self, level: LogLevel, message: &str) {
-        api::log(
+        redmod::log(
             self.ctx,
             format!("{:?}\0", level).to_lowercase().as_ptr(),
             format!("{}\0", message).as_ptr(),
@@ -344,14 +344,14 @@ impl Redis {
     /// combination of the other reply_* methods exactly that number of times.
     pub fn reply_array(&self, len: i64) -> Result<(), SlicedError> {
         handle_status(
-            api::reply_with_array(self.ctx, len as libc::c_long),
+            redmod::reply_with_array(self.ctx, len as libc::c_long),
             "Could not reply with long",
         )
     }
 
     pub fn reply_integer(&self, integer: i64) -> Result<(), SlicedError> {
         handle_status(
-            api::reply_with_long_long(self.ctx, integer as libc::c_longlong),
+            redmod::reply_with_long_long(self.ctx, integer as libc::c_longlong),
             "Could not reply with longlong",
         )
     }
@@ -359,7 +359,7 @@ impl Redis {
     pub fn reply_string(&self, message: &str) -> Result<(), SlicedError> {
         let redis_str = self.create_string(message);
         handle_status(
-            api::reply_with_string(self.ctx, redis_str.str_inner),
+            redmod::reply_with_string(self.ctx, redis_str.str_inner),
             "Could not reply with string",
         )
     }
@@ -367,11 +367,11 @@ impl Redis {
     pub fn reply_value(&self, value: listpack::Value) -> Result<(), SlicedError> {
         match value {
             listpack::Value::Int(v) => handle_status(
-                api::reply_with_long_long(self.ctx, v),
+                redmod::reply_with_long_long(self.ctx, v),
                 "Could not reply with integer",
             ),
             listpack::Value::String(p, size) => handle_status(
-                api::reply_with_string_buffer(self.ctx, p, size as usize),
+                redmod::reply_with_string_buffer(self.ctx, p, size as usize),
                 "Could not reply with integer",
             )
         }
@@ -379,7 +379,7 @@ impl Redis {
 
     pub fn reply_sds(&self, message: sds::Sds) -> Result<(), SlicedError> {
         handle_status(
-            api::reply_with_string_buffer(self.ctx, message as *const u8, sds::get_len(message)),
+            redmod::reply_with_string_buffer(self.ctx, message as *const u8, sds::get_len(message)),
             "Could not reply with string",
         )
     }
@@ -401,15 +401,15 @@ pub enum KeyMode {
 /// operation through the use of the Drop trait.
 #[derive(Debug)]
 pub struct RedisKey {
-    ctx: *mut api::RedisModuleCtx,
-    key_inner: *mut api::RedisModuleKey,
+    ctx: *mut redmod::RedisModuleCtx,
+    key_inner: *mut redmod::RedisModuleKey,
     key_str: RedisString,
 }
 
 impl RedisKey {
-    fn open(ctx: *mut api::RedisModuleCtx, key: &str) -> RedisKey {
+    fn open(ctx: *mut redmod::RedisModuleCtx, key: &str) -> RedisKey {
         let key_str = RedisString::create(ctx, key);
-        let key_inner = api::open_key(ctx, key_str.str_inner, to_raw_mode(KeyMode::Read));
+        let key_inner = redmod::open_key(ctx, key_str.str_inner, to_raw_mode(KeyMode::Read));
         RedisKey {
             ctx,
             key_inner,
@@ -419,7 +419,7 @@ impl RedisKey {
 
     /// Detects whether the key pointer given to us by Redis is null.
     pub fn is_null(&self) -> bool {
-        let null_key: *mut api::RedisModuleKey = ptr::null_mut();
+        let null_key: *mut redmod::RedisModuleKey = ptr::null_mut();
         self.key_inner == null_key
     }
 
@@ -436,15 +436,15 @@ impl RedisKey {
 impl Drop for RedisKey {
     // Frees resources appropriately as a RedisKey goes out of scope.
     fn drop(&mut self) {
-        api::close_key(self.key_inner);
+        redmod::close_key(self.key_inner);
     }
 }
 
 /// `RedisKeyWritable` is an abstraction over a Redis key that allows read and
 /// write operations.
 pub struct RedisKeyWritable {
-    ctx: *mut api::RedisModuleCtx,
-    key_inner: *mut api::RedisModuleKey,
+    ctx: *mut redmod::RedisModuleCtx,
+    key_inner: *mut redmod::RedisModuleKey,
 
     // The Redis string
     //
@@ -455,10 +455,10 @@ pub struct RedisKeyWritable {
 }
 
 impl RedisKeyWritable {
-    fn open(ctx: *mut api::RedisModuleCtx, key: &str) -> RedisKeyWritable {
+    fn open(ctx: *mut redmod::RedisModuleCtx, key: &str) -> RedisKeyWritable {
         let key_str = RedisString::create(ctx, key);
         let key_inner =
-            api::open_key(ctx, key_str.str_inner, to_raw_mode(KeyMode::ReadWrite));
+            redmod::open_key(ctx, key_str.str_inner, to_raw_mode(KeyMode::ReadWrite));
         RedisKeyWritable {
             ctx,
             key_inner,
@@ -487,20 +487,20 @@ impl RedisKeyWritable {
     }
 
     pub fn set_expire(&self, expire: time::Duration) -> Result<(), SlicedError> {
-        match api::set_expire(self.key_inner, expire.num_milliseconds()) {
-            api::Status::Ok => Ok(()),
+        match redmod::set_expire(self.key_inner, expire.num_milliseconds()) {
+            redmod::Status::Ok => Ok(()),
 
             // Error may occur if the key wasn't open for writing or is an
             // empty key.
-            api::Status::Err => Err(error!("Error while setting key expire")),
+            redmod::Status::Err => Err(error!("Error while setting key expire")),
         }
     }
 
     pub fn write(&self, val: &str) -> Result<(), SlicedError> {
         let val_str = RedisString::create(self.ctx, val);
-        match api::string_set(self.key_inner, val_str.str_inner) {
-            api::Status::Ok => Ok(()),
-            api::Status::Err => Err(error!("Error while setting key")),
+        match redmod::string_set(self.key_inner, val_str.str_inner) {
+            redmod::Status::Ok => Ok(()),
+            redmod::Status::Err => Err(error!("Error while setting key")),
         }
     }
 }
@@ -508,7 +508,7 @@ impl RedisKeyWritable {
 impl Drop for RedisKeyWritable {
     // Frees resources appropriately as a RedisKey goes out of scope.
     fn drop(&mut self) {
-        api::close_key(self.key_inner);
+        redmod::close_key(self.key_inner);
     }
 }
 
@@ -521,13 +521,13 @@ impl Drop for RedisKeyWritable {
 /// fault-free operation through the use of the Drop trait.
 #[derive(Debug)]
 pub struct RedisString {
-    ctx: *mut api::RedisModuleCtx,
-    str_inner: *mut api::RedisModuleString,
+    ctx: *mut redmod::RedisModuleCtx,
+    str_inner: *mut redmod::RedisModuleString,
 }
 
 impl RedisString {
-    fn create(ctx: *mut api::RedisModuleCtx, s: &str) -> RedisString {
-        let str_inner = api::create_string(ctx, format!("{}\0", s).as_ptr(), s.len());
+    fn create(ctx: *mut redmod::RedisModuleCtx, s: &str) -> RedisString {
+        let str_inner = redmod::create_string(ctx, format!("{}\0", s).as_ptr(), s.len());
         RedisString { ctx, str_inner }
     }
 }
@@ -536,36 +536,36 @@ impl RedisString {
 impl Drop for RedisString {
     // Frees resources appropriately as a RedisString goes out of scope.
     fn drop(&mut self) {
-        api::free_string(self.ctx, self.str_inner);
+        redmod::free_string(self.ctx, self.str_inner);
     }
 }
 
 ///
-fn handle_status(status: api::Status, message: &str) -> Result<(), SlicedError> {
+fn handle_status(status: redmod::Status, message: &str) -> Result<(), SlicedError> {
     match status {
-        api::Status::Ok => Ok(()),
-        api::Status::Err => Err(error!(message)),
+        redmod::Status::Ok => Ok(()),
+        redmod::Status::Err => Err(error!(message)),
     }
 }
 
 fn manifest_redis_reply(
-    reply: *mut api::RedisModuleCallReply,
+    reply: *mut redmod::RedisModuleCallReply,
 ) -> Result<Reply, SlicedError> {
-    match api::call_reply_type(reply) {
-        api::ReplyType::Integer => Ok(Reply::Integer(api::call_reply_integer(reply))),
-        api::ReplyType::Nil => Ok(Reply::Nil),
-        api::ReplyType::String => {
+    match redmod::call_reply_type(reply) {
+        redmod::ReplyType::Integer => Ok(Reply::Integer(redmod::call_reply_integer(reply))),
+        redmod::ReplyType::Nil => Ok(Reply::Nil),
+        redmod::ReplyType::String => {
             let mut length: libc::size_t = 0;
-            let bytes = api::call_reply_string_ptr(reply, &mut length);
+            let bytes = redmod::call_reply_string_ptr(reply, &mut length);
             from_byte_string(bytes, length)
                 .map(Reply::String)
                 .map_err(SlicedError::from)
         }
-        api::ReplyType::Unknown => Ok(Reply::Unknown),
+        redmod::ReplyType::Unknown => Ok(Reply::Unknown),
 
         // TODO: I need to actually extract the error from Redis here. Also, it
         // should probably be its own non-generic variety of CellError.
-        api::ReplyType::Error => Err(error!("Redis replied with an error.")),
+        redmod::ReplyType::Error => Err(error!("Redis replied with an error.")),
 
         other => Err(error!("Don't yet handle Redis type: {:?}", other)),
     }
@@ -573,10 +573,10 @@ fn manifest_redis_reply(
 
 #[deprecated]
 fn manifest_redis_string(
-    redis_str: *mut api::RedisModuleString,
+    redis_str: *mut redmod::RedisModuleString,
 ) -> Result<String, string::FromUtf8Error> {
     let mut length: libc::size_t = 0;
-    let bytes = api::string_ptr_len(redis_str, &mut length);
+    let bytes = redmod::string_ptr_len(redis_str, &mut length);
     from_byte_string(bytes, length)
 }
 
@@ -597,14 +597,14 @@ fn manifest_redis_string(
 //}
 
 pub fn parse_args(
-    argv: *mut *mut api::RedisModuleString,
+    argv: *mut *mut redmod::RedisModuleString,
     argc: libc::c_int,
 ) -> SmallVec<[listpack::Value;32]> {
     let mut args: SmallVec<[_;32]> = SmallVec::with_capacity(argc as usize);
     for i in 0..argc {
         let redis_str = unsafe { *argv.offset(i as isize) };
         let mut size: libc::size_t = 0;
-        let ptr = api::string_ptr_len(redis_str, &mut size as *mut libc::size_t);
+        let ptr = redmod::string_ptr_len(redis_str, &mut size as *mut libc::size_t);
         // Parse the SDS string and automatically coerce integers.
         args.push(listpack::parse_raw(ptr, size));
     }
@@ -616,14 +616,14 @@ pub fn parse_args(
 /// No copying takes place except for integer coercion which converts a c-str
 /// to an 'i64'. The values must not outlive the RedisModuleString instances.
 pub fn parse_args_for_write(
-    argv: *mut *mut api::RedisModuleString,
+    argv: *mut *mut redmod::RedisModuleString,
     argc: libc::c_int,
 ) -> SmallVec<[listpack::MemoizedValue;32]> {
     let mut args: SmallVec<[_;32]> = SmallVec::with_capacity(argc as usize);
     for i in 0..argc {
         let redis_str = unsafe { *argv.offset(i as isize) };
         let mut size: libc::size_t = 0;
-        let ptr = api::string_ptr_len(redis_str, &mut size as *mut libc::size_t);
+        let ptr = redmod::string_ptr_len(redis_str, &mut size as *mut libc::size_t);
         // Parse the SDS string and automatically coerce integers.
         args.push(listpack::MemoizedValue::new(listpack::parse_raw(ptr, size)));
     }
@@ -632,7 +632,7 @@ pub fn parse_args_for_write(
 
 
 fn parse_args_old(
-    argv: *mut *mut api::RedisModuleString,
+    argv: *mut *mut redmod::RedisModuleString,
     argc: libc::c_int,
 ) -> Result<Vec<String>, string::FromUtf8Error> {
     let mut args: Vec<String> = Vec::with_capacity(argc as usize);
@@ -656,18 +656,18 @@ fn from_byte_string(
     String::from_utf8(vec_str)
 }
 
-fn read_key(key: *mut api::RedisModuleKey) -> Result<String, string::FromUtf8Error> {
+fn read_key(key: *mut redmod::RedisModuleKey) -> Result<String, string::FromUtf8Error> {
     let mut length: libc::size_t = 0;
     from_byte_string(
-        api::string_dma(key, &mut length, api::KeyMode::READ),
+        redmod::string_dma(key, &mut length, redmod::KeyMode::READ),
         length,
     )
 }
 
-fn to_raw_mode(mode: KeyMode) -> api::KeyMode {
+fn to_raw_mode(mode: KeyMode) -> redmod::KeyMode {
     match mode {
-        KeyMode::Read => api::KeyMode::READ,
-        KeyMode::ReadWrite => api::KeyMode::READ | api::KeyMode::WRITE,
+        KeyMode::Read => redmod::KeyMode::READ,
+        KeyMode::ReadWrite => redmod::KeyMode::READ | redmod::KeyMode::WRITE,
     }
 }
 
